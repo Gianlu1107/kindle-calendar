@@ -9,6 +9,7 @@ User=root
 WorkingDirectory=/opt/kindleCalendar
 Environment=PORT=5055
 Environment=KINDLE_BASE_DIR=/opt/kindleCalendar
+Environment=PYTHONUNBUFFERED=1
 ExecStart=/opt/kindleCalendar/venv/bin/python3 /opt/kindleCalendar/render_loop.py
 Restart=always
 RestartSec=3
