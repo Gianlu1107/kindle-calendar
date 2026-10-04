@@ -1053,7 +1053,8 @@ class KindleHandler(BaseHTTPRequestHandler):
         else:
             self.send_response(404)
             self.end_headers()
-            self.wfile.write(b"Not Found")
+    def do_HEAD(self):
+        self.do_GET()
 
     def log_message(self, format, *args):
         pass
