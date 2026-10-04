@@ -26,25 +26,25 @@ Il sistema aggrega e visualizza in tempo reale:
 ```mermaid
 flowchart TD
     subgraph Client ["macOS Client"]
-        A[Apple Calendar.app] -->|AppleScript| B[sync_calendar.py]
-        B -->|SCP / rsync| C[calendar_feed.ics]
+        A["Apple Calendar.app"] -->|AppleScript| B["sync_calendar.py"]
+        B -->|SCP / rsync| C["calendar_feed.ics"]
     end
 
     subgraph Server ["Linux Server / LXC Container"]
-        C --> D[server.py HTTP Server :5055]
-        CV[ClasseViva API] -->|Cache 1h| D
-        GQ[Groq LLM API] -->|Classificazione| D
-        OM[Open-Meteo API] --> D
-        D --> E[HTML Dashboard Template]
-        E -->|Pre-render a :55| F[render_loop.py - Playwright Headless Chromium]
-        F -->|ImageMagick 90 deg| G[/api/image - PNG 758x1024]
+        C --> D["server.py (HTTP Server :5055)"]
+        CV["ClasseViva API"] -->|Cache 1h| D
+        GQ["Groq LLM API"] -->|Classificazione| D
+        OM["Open-Meteo API"] --> D
+        D --> E["HTML Dashboard Template"]
+        E -->|Pre-render a :55| F["render_loop.py (Playwright Chromium)"]
+        F -->|ImageMagick 90 deg| G["/api/image (PNG 758x1024)"]
     end
 
     subgraph Kindle ["Kindle Paperwhite Kiosk"]
-        H[kindle_kiosk.sh Daemon] -->|HTTP GET a :00.0| G
+        H["kindle_kiosk.sh Daemon"] -->|HTTP GET a :00.0| G
         H -->|gasgauge-info / lipc| D
-        H -->|FBInk Framebuffer| I[E-Ink Display]
-        H -->|sysfs PWM| J[LED Frontlight 0% / 50%]
+        H -->|FBInk Framebuffer| I["E-Ink Display"]
+        H -->|sysfs PWM| J["LED Frontlight (0% / 50%)"]
     end
 ```
 
