@@ -11,6 +11,25 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 
+_EMOJI_PATTERN = re.compile(
+    r"[\U0001F600-\U0001F64F"
+    r"\U0001F300-\U0001F5FF"
+    r"\U0001F680-\U0001F6FF"
+    r"\U0001F1E0-\U0001F1FF"
+    r"\U00002702-\U000027B0"
+    r"\U000024C2-\U0001F251"
+    r"\U0001F900-\U0001F9FF"
+    r"\U0001FA70-\U0001FAFF"
+    r"\U00002600-\U000026FF]+",
+    flags=re.UNICODE
+)
+
+def strip_emojis(text):
+    if not text:
+        return ""
+    cleaned = _EMOJI_PATTERN.sub("", text)
+    return " ".join(cleaned.split()).strip()
+
 # Carica orario corretto (32 ore settimanali e blocchi 2 ore) e libri
 with open(os.path.join(DATA_DIR, "orario_3id.json"), "r", encoding="utf-8") as f:
     ORARIO_DATA = json.load(f)
@@ -251,7 +270,10 @@ def get_icloud_events(env):
                 now_str = datetime.now().strftime("%Y%m%d")
                 start = cur.get("start_raw", "")
                 end = cur.get("end_raw", "")
-                summ = cur.get("summary", "")
+                summ = strip_emojis(cur.get("summary", ""))
+                cur["summary"] = summ
+                cur["location"] = strip_emojis(cur.get("location", ""))
+                cur["desc"] = strip_emojis(cur.get("desc", ""))
                 if start.startswith(now_str) or not start:
                     is_allday = True
                     start_min = 0
@@ -461,9 +483,9 @@ def get_classeviva_agenda(env):
 
         for item in raw_items:
             compiti.append({
-                "materia": item["materia"],
+                "materia": strip_emojis(item["materia"]),
                 "data": item["data"],
-                "descrizione": item["descrizione"],
+                "descrizione": strip_emojis(item["descrizione"]),
                 "is_test": item["is_test"]
             })
 
@@ -714,11 +736,15 @@ def build_dashboard_html(query_params):
 
                 # Se il blocco è alto almeno il 13% (circa 1 ora e mezza / 2 ore), c'è spazio per il luogo
                 if height_pct >= 12.0 and loc_text:
-                    extra_details_html += f'<div style="font-size:10px;font-weight:700;opacity:0.85;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">📍 {loc_text}</div>'
+                    clean_loc = strip_emojis(loc_text)
+                    if clean_loc:
+                        extra_details_html += f'<div style="font-size:10px;font-weight:700;opacity:0.85;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="display:inline-block;vertical-align:-1px;margin-right:3px;"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>{clean_loc}</div>'
 
                 # Se il blocco è ancora più alto (oltre 18%, cioè 3+ ore), mostra anche la descrizione/note
                 if height_pct >= 18.0 and desc_text:
-                    extra_details_html += f'<div style="font-size:9.5px;font-weight:600;opacity:0.75;margin-top:2px;line-height:1.2;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">{desc_text}</div>'
+                    clean_desc = strip_emojis(desc_text)
+                    if clean_desc:
+                        extra_details_html += f'<div style="font-size:9.5px;font-weight:600;opacity:0.75;margin-top:2px;line-height:1.2;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">{clean_desc}</div>'
 
                 # Evidenzia se l'impegno è in corso adesso
                 is_active = (s_min <= now_min <= e_min)

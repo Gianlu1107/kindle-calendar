@@ -3,7 +3,7 @@
 # Kindle Client Daemon - High-Precision Atomic Kiosk Client
 # Supports:
 #   - Atomic minute synchronization (:00)
-#   - Real hardware battery percentage & charging detection (⚡)
+#   - Real hardware battery percentage and charging detection
 #   - Dynamic day/night frontlight (0% at 22:00, 50% at 06:30 with full PWM shutdown)
 #   - Automatic background NTP synchronization
 #   - Screensaver prevention (preventScreenSaver)

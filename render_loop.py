@@ -21,7 +21,7 @@ async def render_for_timestamp(page, target_ts):
         os.replace(ROT_TMP, ROT_IMG)
     dt_str = time.strftime('%H:%M:%S', time.localtime(target_ts))
     elapsed = time.time() - t0
-    print(f"[{time.strftime('%H:%M:%S')}] 📸 Snapshot target {dt_str} completato in {elapsed:.2f}s e pronto su /api/image!")
+    print(f"[{time.strftime('%H:%M:%S')}] [RENDER] Snapshot target {dt_str} completato in {elapsed:.2f}s e pronto su /api/image")
 
 async def main():
     print(f"=== KINDLE CALENDAR RENDERING ENGINE AD ALTA PRECISIONE (PORT {PORT}) ===")
