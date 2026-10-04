@@ -1,0 +1,60 @@
+name: Continuous Deployment (Proxmox CT 141)
+
+on:
+  push:
+    branches: ["main"]
+
+concurrency:
+  group: deploy-ct141
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to Proxmox CT 141
+    runs-on: [self-hosted, ct141]
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Deploy Application to /opt/kindleCalendar
+        run: |
+          echo "[INFO] Inizio auto-deploy su Proxmox CT 141..."
+          TARGET_DIR="/opt/kindleCalendar"
+          mkdir -p "$TARGET_DIR"
+
+          echo "==> Sincronizzazione codice di produzione..."
+          rsync -av --exclude='.git' \
+                    --exclude='.env' \
+                    --exclude='venv' \
+                    --exclude='__pycache__' \
+                    --exclude='calendar_feed.ics' \
+                    --exclude='*.png' \
+                    --exclude='docs' \
+                    ./ "$TARGET_DIR/"
+
+          echo "==> Aggiornamento dipendenze Python..."
+          if [ -d "$TARGET_DIR/venv" ]; then
+            "$TARGET_DIR/venv/bin/pip" install --upgrade pip --quiet
+            "$TARGET_DIR/venv/bin/pip" install -r "$TARGET_DIR/requirements.txt" --quiet
+          fi
+
+          echo "==> Aggiornamento configurazione systemd..."
+          if [ -d "$TARGET_DIR/systemd" ]; then
+            cp "$TARGET_DIR/systemd/kindle-server.service" /etc/systemd/system/
+            cp "$TARGET_DIR/systemd/kindle-renderer.service" /etc/systemd/system/
+            systemctl daemon-reload
+          fi
+
+          echo "==> Riavvio dei servizi kindle-server e kindle-renderer..."
+          systemctl restart kindle-server.service
+          systemctl restart kindle-renderer.service
+
+          echo "==> Verifica stato dei servizi..."
+          systemctl is-active --quiet kindle-server.service || (echo "kindle-server non attivo" && exit 1)
+          systemctl is-active --quiet kindle-renderer.service || (echo "kindle-renderer non attivo" && exit 1)
+
+          echo "==> Test health-check HTTP locale..."
+          sleep 2
+          curl -f -s http://127.0.0.1:5055/api/status >/dev/null || (echo "Healthcheck API fallito" && exit 1)
+
+          echo "[SUCCESS] Deploy completato con successo. Dashboard e renderer attivi e operativi."
