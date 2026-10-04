@@ -1,0 +1,15 @@
+[Unit]
+Description=Kindle Calendar Dashboard Web Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/kindleCalendar
+Environment=PORT=5055
+ExecStart=/opt/kindleCalendar/venv/bin/python3 /opt/kindleCalendar/server.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

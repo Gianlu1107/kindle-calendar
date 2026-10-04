@@ -1,0 +1,32 @@
+{
+  "class": "CLASSE_ESEMPIO",
+  "school": "Istituto Scolastico Esempio",
+  "schedule": {
+    "lunedi": [
+      {
+        "ora": "1ª-2ª",
+        "ore_num": [1, 2],
+        "inizio": "08:00",
+        "fine": "09:55",
+        "materia": "Informatica",
+        "dettaglio": "Laboratorio",
+        "docenti": ["Docente 1"],
+        "aula": "Lab 1"
+      },
+      {
+        "ora": "3ª",
+        "ore_num": [3],
+        "inizio": "10:05",
+        "fine": "11:00",
+        "materia": "Matematica",
+        "docenti": ["Docente 2"],
+        "aula": "Aula 101"
+      }
+    ],
+    "martedi": [],
+    "mercoledi": [],
+    "giovedi": [],
+    "venerdi": [],
+    "sabato": []
+  }
+}

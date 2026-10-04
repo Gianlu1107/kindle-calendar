@@ -1,0 +1,17 @@
+[Unit]
+Description=Kindle Calendar Renderer Engine
+After=kindle-server.service
+Requires=kindle-server.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/kindleCalendar
+Environment=PORT=5055
+Environment=KINDLE_BASE_DIR=/opt/kindleCalendar
+ExecStart=/opt/kindleCalendar/venv/bin/python3 /opt/kindleCalendar/render_loop.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

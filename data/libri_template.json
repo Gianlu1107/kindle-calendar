@@ -1,0 +1,18 @@
+{
+  "books": [
+    {
+      "subject": "Informatica",
+      "title": "Manuale di Informatica Vol. 1",
+      "authors": "Autore 1",
+      "publisher": "Editore Esempio",
+      "code": "1234567890123"
+    },
+    {
+      "subject": "Matematica",
+      "title": "Matematica a Colori",
+      "authors": "Autore 2",
+      "publisher": "Editore Esempio",
+      "code": "9876543210987"
+    }
+  ]
+}

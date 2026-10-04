@@ -1,0 +1,106 @@
+{
+  "class": "3ID",
+  "school": "ITI Francesco Severi - Padova",
+  "specialization": "Informatica e Telecomunicazioni",
+  "books": [
+    {
+      "subject": "Informatica",
+      "title": "Concetti di Informatica e Java",
+      "subtitle": "Settima Edizione",
+      "author": "Horstmann Cay",
+      "publisher": "Maggioli",
+      "isbn": "9788891639431",
+      "required": true
+    },
+    {
+      "subject": "Inglese",
+      "title": "Insight 2E Upper-Intermediate",
+      "subtitle": "Student's Book & Workbook",
+      "author": "AA.VV.",
+      "publisher": "Oxford",
+      "isbn": "9780194158046",
+      "required": true
+    },
+    {
+      "subject": "Inglese",
+      "title": "Performer B1 Phases - Vol. 2",
+      "subtitle": "Student's Book & Workbook",
+      "author": "Spiazzi, Tavella, Layton",
+      "publisher": "Zanichelli",
+      "isbn": "9788808214737",
+      "required": false
+    },
+    {
+      "subject": "Italiano",
+      "title": "L'Ottima Compagnia + Divina Commedia",
+      "subtitle": "Dal Duecento al Cinquecento",
+      "author": "Fontana, Forte, Talice",
+      "publisher": "Zanichelli",
+      "isbn": "9788808988218",
+      "required": true
+    },
+    {
+      "subject": "Matematica",
+      "title": "Matematica.verde 3 - Vol. 3A+3B",
+      "subtitle": "Confezione 3A+3B",
+      "author": "Bergamini, Barozzi, Trifone",
+      "publisher": "Zanichelli",
+      "isbn": "9788808419361",
+      "required": true
+    },
+    {
+      "subject": "Scienze Motorie",
+      "title": "Attivi! Sport e Sane Abitudini",
+      "subtitle": "Volume Unico",
+      "author": "Chiesa, Taini, Fiorini",
+      "publisher": "Marietti Scuola",
+      "isbn": "9788839303967",
+      "required": false
+    },
+    {
+      "subject": "Sistemi e Reti",
+      "title": "Linguaggi Lato Client (Web & Mobile)",
+      "subtitle": "Atlas",
+      "author": "Lorenzi, Giupponi, Iovino",
+      "publisher": "Atlas",
+      "isbn": "9788826821917",
+      "required": true
+    },
+    {
+      "subject": "Sistemi e Reti",
+      "title": "Reti di Calcolatori",
+      "subtitle": "Edizione Italiana",
+      "author": "Tanenbaum, Feamster, Wetherall",
+      "publisher": "Pearson",
+      "isbn": "9788891915313",
+      "required": true
+    },
+    {
+      "subject": "Storia",
+      "title": "Noi di Ieri, Noi di Domani - Vol. 1",
+      "subtitle": "Dal Mille al Seicento",
+      "author": "Barbero, Frugoni, Luzzatto",
+      "publisher": "Zanichelli",
+      "isbn": "9788808966841",
+      "required": true
+    },
+    {
+      "subject": "TPSIT",
+      "title": "Tecnologie e Progettazione (TPSIT 1)",
+      "subtitle": "Volume 1",
+      "author": "Lorenzi, Cavalli, Colleoni",
+      "publisher": "Atlas",
+      "isbn": "9788826815480",
+      "required": true
+    },
+    {
+      "subject": "Telecomunicazioni",
+      "title": "TLC - Telecomunicazioni per Informatica",
+      "subtitle": "Laboratori e Competenze",
+      "author": "Ferrari Emilio",
+      "publisher": "San Marco",
+      "isbn": "9788884884268",
+      "required": true
+    }
+  ]
+}

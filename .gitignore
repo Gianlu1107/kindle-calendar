@@ -1,0 +1,67 @@
+# Environment and secrets
+.env
+.env.local
+.env.*.local
+*.env
+*.pem
+*.key
+*.rsa
+id_*
+kindle_rsa
+downloads/
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.venv/
+venv/
+ENV/
+
+# System and editor files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Runtime generated images & data
+dashboard_kindle*.png
+scenario_*.png
+*.png
+!docs/*.png
+!docs/assets/*.png
+calendar_feed.ics
+/tmp/
+*.log
+*.tar.gz
+
+# Jailbreak & firmware packages
+USBNetwork/
+*.azw2
+*.bin
+legacy/
+

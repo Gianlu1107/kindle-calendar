@@ -1,0 +1,260 @@
+{
+  "class": "3ID",
+  "school": "ITI Francesco Severi - Padova",
+  "schedule": {
+    "lunedi": [
+      {
+        "ora": "1ª-2ª",
+        "ore_num": [1, 2],
+        "inizio": "08:00",
+        "fine": "09:55",
+        "materia": "Informatica",
+        "dettaglio": "Laboratorio di Informatica (2 ore)",
+        "docenti": ["Rinaldini", "D'Avino"],
+        "aula": "Lab Info1"
+      },
+      {
+        "ora": "3ª",
+        "ore_num": [3],
+        "inizio": "09:55",
+        "fine": "10:50",
+        "materia": "Telecomunicazioni",
+        "docenti": ["Morandin"],
+        "aula": "Aula 203"
+      },
+      {
+        "ora": "4ª",
+        "ore_num": [4],
+        "inizio": "11:05",
+        "fine": "12:05",
+        "materia": "Italiano",
+        "docenti": ["Sartor"],
+        "aula": "Aula 203"
+      },
+      {
+        "ora": "5ª",
+        "ore_num": [5],
+        "inizio": "12:05",
+        "fine": "13:00",
+        "materia": "Matematica",
+        "docenti": ["Menara"],
+        "aula": "Aula 203"
+      },
+      {
+        "ora": "6ª",
+        "ore_num": [6],
+        "inizio": "13:00",
+        "fine": "13:50",
+        "materia": "Sistemi e Reti",
+        "docenti": ["Fortuna"],
+        "aula": "Aula 203"
+      }
+    ],
+    "martedi": [
+      {
+        "ora": "1ª-2ª",
+        "ore_num": [1, 2],
+        "inizio": "08:00",
+        "fine": "09:55",
+        "materia": "Scienze Motorie",
+        "dettaglio": "Palestra (2 ore)",
+        "docenti": ["Pecoraro"],
+        "aula": "Palestra 2"
+      },
+      {
+        "ora": "3ª",
+        "ore_num": [3],
+        "inizio": "09:55",
+        "fine": "10:50",
+        "materia": "Sistemi e Reti",
+        "docenti": ["Fortuna"],
+        "aula": "Aula 203"
+      },
+      {
+        "ora": "4ª",
+        "ore_num": [4],
+        "inizio": "11:05",
+        "fine": "12:05",
+        "materia": "Inglese",
+        "docenti": ["Seraglia"],
+        "aula": "Aula 203"
+      },
+      {
+        "ora": "5ª",
+        "ore_num": [5],
+        "inizio": "12:05",
+        "fine": "13:00",
+        "materia": "Storia",
+        "docenti": ["Sartor"],
+        "aula": "Aula 203"
+      }
+    ],
+    "mercoledi": [
+      {
+        "ora": "1ª-2ª",
+        "ore_num": [1, 2],
+        "inizio": "08:00",
+        "fine": "09:55",
+        "materia": "Italiano",
+        "dettaglio": "Italiano (2 ore)",
+        "docenti": ["Sartor"],
+        "aula": "Aula 203"
+      },
+      {
+        "ora": "3ª",
+        "ore_num": [3],
+        "inizio": "09:55",
+        "fine": "10:50",
+        "materia": "Matematica",
+        "docenti": ["Menara"],
+        "aula": "Aula 203"
+      },
+      {
+        "ora": "4ª",
+        "ore_num": [4],
+        "inizio": "11:05",
+        "fine": "12:05",
+        "materia": "Informatica",
+        "dettaglio": "Laboratorio Informatica e TPSIT",
+        "docenti": ["Rinaldini", "D'Avino"],
+        "aula": "Lab Info3"
+      },
+      {
+        "ora": "5ª",
+        "ore_num": [5],
+        "inizio": "12:05",
+        "fine": "13:00",
+        "materia": "TPSIT",
+        "dettaglio": "Laboratorio Informatica e TPSIT",
+        "docenti": ["Costantini", "D'Avino"],
+        "aula": "Lab Info3"
+      },
+      {
+        "ora": "6ª",
+        "ore_num": [6],
+        "inizio": "13:00",
+        "fine": "13:50",
+        "materia": "TPSIT",
+        "docenti": ["Costantini"],
+        "aula": "Aula 203"
+      }
+    ],
+    "giovedi": [
+      {
+        "ora": "1ª-2ª",
+        "ore_num": [1, 2],
+        "inizio": "08:00",
+        "fine": "09:55",
+        "materia": "Telecomunicazioni",
+        "dettaglio": "Laboratorio Telecomunicazioni (2 ore)",
+        "docenti": ["Morandin", "Malvasi"],
+        "aula": "Lab SistemiEle"
+      },
+      {
+        "ora": "3ª",
+        "ore_num": [3],
+        "inizio": "09:55",
+        "fine": "10:50",
+        "materia": "TPSIT",
+        "docenti": ["Costantini"],
+        "aula": "Aula 203"
+      },
+      {
+        "ora": "4ª",
+        "ore_num": [4],
+        "inizio": "11:05",
+        "fine": "12:05",
+        "materia": "Storia",
+        "docenti": ["Sartor"],
+        "aula": "Aula 203"
+      },
+      {
+        "ora": "5ª",
+        "ore_num": [5],
+        "inizio": "12:05",
+        "fine": "13:00",
+        "materia": "Inglese",
+        "docenti": ["Seraglia"],
+        "aula": "Aula 203"
+      }
+    ],
+    "venerdi": [
+      {
+        "ora": "1ª-2ª",
+        "ore_num": [1, 2],
+        "inizio": "08:00",
+        "fine": "09:55",
+        "materia": "Sistemi e Reti",
+        "dettaglio": "Laboratorio Reti (2 ore)",
+        "docenti": ["Fortuna", "D'Avino"],
+        "aula": "Lab Info3"
+      },
+      {
+        "ora": "3ª",
+        "ore_num": [3],
+        "inizio": "09:55",
+        "fine": "10:50",
+        "materia": "Matematica",
+        "docenti": ["Menara"],
+        "aula": "Aula 203"
+      },
+      {
+        "ora": "4ª",
+        "ore_num": [4],
+        "inizio": "11:05",
+        "fine": "12:05",
+        "materia": "Religione",
+        "docenti": ["Barzon"],
+        "aula": "Aula 203"
+      },
+      {
+        "ora": "5ª",
+        "ore_num": [5],
+        "inizio": "12:05",
+        "fine": "13:00",
+        "materia": "Italiano",
+        "docenti": ["Sartor"],
+        "aula": "Aula 203"
+      },
+      {
+        "ora": "6ª",
+        "ore_num": [6],
+        "inizio": "13:00",
+        "fine": "13:50",
+        "materia": "Informatica",
+        "docenti": ["Rinaldini"],
+        "aula": "Aula 203"
+      }
+    ],
+    "sabato": [
+      {
+        "ora": "1ª-2ª",
+        "ore_num": [1, 2],
+        "inizio": "08:00",
+        "fine": "09:55",
+        "materia": "Informatica",
+        "dettaglio": "Informatica (2 ore)",
+        "docenti": ["Rinaldini"],
+        "aula": "Aula 203"
+      },
+      {
+        "ora": "3ª",
+        "ore_num": [3],
+        "inizio": "09:55",
+        "fine": "10:50",
+        "materia": "Matematica",
+        "docenti": ["Menara"],
+        "aula": "Aula 203"
+      },
+      {
+        "ora": "4ª",
+        "ore_num": [4],
+        "inizio": "11:05",
+        "fine": "12:05",
+        "materia": "Inglese",
+        "docenti": ["Seraglia"],
+        "aula": "Aula 203"
+      }
+    ]
+  }
+}
