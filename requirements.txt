@@ -1,2 +1,3 @@
 playwright>=1.40.0
 caldav>=3.3.0
+psycopg2-binary>=2.9.9

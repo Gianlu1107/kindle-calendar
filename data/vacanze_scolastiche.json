@@ -1,0 +1,41 @@
+{
+  "school_year": "2026/2027",
+  "school_year_start": "2026-09-10",
+  "school_year_end": "2027-06-08",
+  "holidays": [
+    {
+      "type": "winter",
+      "name": "Vacanze di Natale",
+      "start": "2026-12-24",
+      "end": "2027-01-06",
+      "resume_date": "2027-01-07"
+    },
+    {
+      "type": "carnival",
+      "name": "Vacanze di Carnevale",
+      "start": "2027-02-08",
+      "end": "2027-02-10",
+      "resume_date": "2027-02-11"
+    },
+    {
+      "type": "easter",
+      "name": "Vacanze di Pasqua",
+      "start": "2027-03-25",
+      "end": "2027-03-30",
+      "resume_date": "2027-03-31"
+    }
+  ],
+  "bridges": {
+    "2026-11-01": "Tutti i Santi",
+    "2026-12-07": "Ponte dell'Immacolata",
+    "2026-12-08": "Immacolata Concezione",
+    "2027-04-25": "Festa della Liberazione",
+    "2027-04-29": "Ponte 1° Maggio",
+    "2027-04-30": "Ponte 1° Maggio",
+    "2027-05-01": "Festa del Lavoro",
+    "2027-05-31": "Ponte 2 Giugno",
+    "2027-06-01": "Ponte 2 Giugno",
+    "2027-06-02": "Festa della Repubblica",
+    "2027-06-13": "Sant'Antonio (Patrono Padova)"
+  }
+}

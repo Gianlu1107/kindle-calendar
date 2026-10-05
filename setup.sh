@@ -17,7 +17,7 @@ BASE_DIR="/opt/kindleCalendar"
 # 1. Dipendenze di sistema
 echo "[+] Installazione dipendenze di sistema apt..."
 apt-get update -y
-apt-get install -y python3 python3-venv imagemagick curl git
+apt-get install -y python3 python3-venv imagemagick curl git postgresql postgresql-contrib libpq-dev
 
 # 2. Setup directory
 mkdir -p "$BASE_DIR"
@@ -43,6 +43,12 @@ if [ ! -f "$BASE_DIR/.env" ] && [ -f "$BASE_DIR/.env.example" ]; then
     cp "$BASE_DIR/.env.example" "$BASE_DIR/.env"
     echo "[!] Ricordati di configurare $BASE_DIR/.env con i tuoi parametri!"
 fi
+
+# 4b. Inizializzazione Database PostgreSQL
+echo "[+] Inizializzazione PostgreSQL..."
+systemctl enable --now postgresql || true
+su - postgres -c "psql -tc \"SELECT 1 FROM pg_database WHERE datname = 'kindle_calendar'\" | grep -q 1 || psql -c \"CREATE DATABASE kindle_calendar;\"" || true
+"$BASE_DIR/venv/bin/python" "$BASE_DIR/db.py" || true
 
 # 5. Servizi systemd
 if [ -d "$BASE_DIR/systemd" ]; then

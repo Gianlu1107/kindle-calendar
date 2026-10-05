@@ -32,12 +32,31 @@ def strip_emojis(text):
     cleaned = _EMOJI_PATTERN.sub("", text)
     return " ".join(cleaned.split()).strip()
 
-# Carica orario corretto (32 ore settimanali e blocchi 2 ore) e libri
-with open(os.path.join(DATA_DIR, "orario_3id.json"), "r", encoding="utf-8") as f:
-    ORARIO_DATA = json.load(f)
+import db
 
-with open(os.path.join(DATA_DIR, "libri_3id.json"), "r", encoding="utf-8") as f:
-    LIBRI_DATA = json.load(f)
+# Carica orario e libri con priorità PostgreSQL e fallback su file JSON
+def load_orario_data():
+    try:
+        data = db.get_schedule("3ID")
+        if data and data.get("schedule"):
+            return data
+    except Exception:
+        pass
+    with open(os.path.join(DATA_DIR, "orario_3id.json"), "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def load_libri_data():
+    try:
+        data = db.get_books("3ID")
+        if data and data.get("books"):
+            return data
+    except Exception:
+        pass
+    with open(os.path.join(DATA_DIR, "libri_3id.json"), "r", encoding="utf-8") as f:
+        return json.load(f)
+
+ORARIO_DATA = load_orario_data()
+LIBRI_DATA = load_libri_data()
 
 GIORNI_MAP = {
     0: "lunedi",
@@ -104,6 +123,94 @@ SCHOOL_BRIDGES_2026_2027 = {
     "2027-06-02": "Festa della Repubblica",
     "2027-06-13": "Sant'Antonio (Patrono Padova)"
 }
+
+def load_school_calendar_config():
+    global SCHOOL_YEAR_START_2026_2027, SCHOOL_YEAR_END_2026_2027, SCHOOL_HOLIDAYS_2026_2027, SCHOOL_BRIDGES_2026_2027
+    try:
+        c_conf = db.get_calendar_config()
+        if c_conf:
+            SCHOOL_YEAR_START_2026_2027 = c_conf["start_date"]
+            SCHOOL_YEAR_END_2026_2027 = c_conf["end_date"]
+            SCHOOL_HOLIDAYS_2026_2027 = c_conf["holidays"]
+            SCHOOL_BRIDGES_2026_2027 = c_conf["bridges"]
+            return
+    except Exception:
+        pass
+
+    cfg_file = os.path.join(DATA_DIR, "vacanze_scolastiche.json")
+    if os.path.exists(cfg_file):
+        try:
+            with open(cfg_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if "school_year_start" in data:
+                y, m, d = map(int, data["school_year_start"].split("-"))
+                SCHOOL_YEAR_START_2026_2027 = date(y, m, d)
+            if "school_year_end" in data:
+                y, m, d = map(int, data["school_year_end"].split("-"))
+                SCHOOL_YEAR_END_2026_2027 = date(y, m, d)
+            if "holidays" in data:
+                h_list = []
+                for h in data["holidays"]:
+                    sy, sm, sd = map(int, h["start"].split("-"))
+                    ey, em, ed = map(int, h["end"].split("-"))
+                    h_list.append({
+                        "type": h["type"],
+                        "name": h["name"],
+                        "start": date(sy, sm, sd),
+                        "end": date(ey, em, ed),
+                        "resume_date": h.get("resume_date")
+                    })
+                SCHOOL_HOLIDAYS_2026_2027 = h_list
+            if "bridges" in data:
+                SCHOOL_BRIDGES_2026_2027 = data["bridges"]
+        except Exception as e:
+            print("Avviso caricamento vacanze_scolastiche.json:", e)
+
+load_school_calendar_config()
+
+def get_holiday_tasks(holiday_type, target_d_obj, env):
+    """
+    Carica i compiti per il periodo di vacanza ('summer', 'winter', 'carnival', 'easter').
+    Interroga prioritariamente PostgreSQL (holiday_tasks); in caso di assenza o errore,
+    utilizza il fallback su data/compiti_vacanze.json ed eventuale integrazione da ClasseViva.
+    """
+    tasks = []
+    try:
+        db_tasks = db.get_holiday_tasks_db(holiday_type)
+        if db_tasks is not None and len(db_tasks) > 0:
+            return db_tasks
+    except Exception:
+        pass
+
+    vacanze_file = os.path.join(DATA_DIR, "compiti_vacanze.json")
+    if os.path.exists(vacanze_file):
+        try:
+            with open(vacanze_file, "r", encoding="utf-8") as vf:
+                raw_v = json.load(vf)
+                if isinstance(raw_v, dict) and holiday_type in raw_v:
+                    tasks = list(raw_v[holiday_type])
+                elif isinstance(raw_v, list):
+                    tasks = raw_v
+        except Exception as e:
+            print("Errore lettura compiti_vacanze.json:", e)
+
+    # Durante l'anno scolastico (winter, carnival, easter), se mancano voci manuali,
+    # integra i compiti futuri da ClasseViva
+    if holiday_type in ["winter", "carnival", "easter"] and len(tasks) == 0:
+        try:
+            cv_items = get_classeviva_agenda(env)
+            if cv_items:
+                for it in cv_items:
+                    tasks.append({
+                        "materia": it.get("materia", ""),
+                        "descrizione": it.get("descrizione", ""),
+                        "stato": it.get("data", ""),
+                        "is_test": it.get("is_test", False)
+                    })
+        except Exception:
+            pass
+
+    return tasks
 
 def get_school_day_info(target_d):
     """
@@ -288,6 +395,7 @@ _CALDAV_CLIENT = None
 _CALDAV_CALENDARS = []
 _CALDAV_CALENDARS_TS = None
 _CALDAV_CACHE = {"timestamp": None, "date_str": None, "data": []}
+_CALDAV_CACHE_BY_DATE = {}
 _CALDAV_CACHE_FILE = "/tmp/caldav_events_cache.json"
 
 def get_caldav_client_and_calendars(username, password):
@@ -317,16 +425,23 @@ def get_caldav_client_and_calendars(username, password):
         return _CALDAV_CLIENT, _CALDAV_CALENDARS
 
 def fetch_caldav_events_direct(caldav_user, caldav_pwd, target_date):
-    global _CALDAV_CACHE
+    global _CALDAV_CACHE, _CALDAV_CACHE_BY_DATE
     now = datetime.now()
     date_str = target_date.strftime("%Y-%m-%d")
     _, calendars = get_caldav_client_and_calendars(caldav_user, caldav_pwd)
     if not calendars:
-        return _CALDAV_CACHE["data"] if _CALDAV_CACHE["data"] else []
+        return _CALDAV_CACHE_BY_DATE.get(date_str, {}).get("data", _CALDAV_CACHE["data"] if _CALDAV_CACHE["data"] else [])
 
+    window_days = 4
     start_dt = datetime.combine(target_date, datetime.min.time())
-    end_dt = datetime.combine(target_date, datetime.max.time())
-    events = []
+    end_dt = datetime.combine(target_date + timedelta(days=window_days), datetime.max.time())
+    
+    # Inizializza dizionario per ciascuna data della finestra
+    events_by_date = {}
+    for k in range(window_days + 1):
+        cur_d_str = (target_date + timedelta(days=k)).strftime("%Y-%m-%d")
+        events_by_date[cur_d_str] = []
+
     seen = set()
 
     for cal in calendars:
@@ -341,12 +456,14 @@ def fetch_caldav_events_direct(caldav_user, caldav_pwd, target_date):
 
                 is_allday = not isinstance(s_dt, datetime)
                 if is_allday:
+                    ev_date_str = s_dt.strftime("%Y-%m-%d")
                     start_min = 0
                     end_min = 24 * 60
                     ora_fmt = "Tutto il giorno"
                     ora_fine_fmt = ""
                 else:
                     s_local = s_dt.astimezone() if getattr(s_dt, "tzinfo", None) else s_dt
+                    ev_date_str = s_local.strftime("%Y-%m-%d")
                     start_min = s_local.hour * 60 + s_local.minute
                     ora_fmt = f"{s_local.hour:02d}:{s_local.minute:02d}"
 
@@ -359,10 +476,10 @@ def fetch_caldav_events_direct(caldav_user, caldav_pwd, target_date):
                         end_min = start_min + 60
                         ora_fine_fmt = f"{(s_local.hour + 1) % 24:02d}:{s_local.minute:02d}"
 
-                dedup_key = (summ.lower(), ora_fmt)
+                dedup_key = (ev_date_str, summ.lower(), ora_fmt)
                 if dedup_key not in seen:
                     seen.add(dedup_key)
-                    events.append({
+                    ev_obj = {
                         "summary": summ,
                         "location": loc,
                         "desc": desc,
@@ -371,26 +488,34 @@ def fetch_caldav_events_direct(caldav_user, caldav_pwd, target_date):
                         "end_min": end_min,
                         "ora": ora_fmt,
                         "ora_fine": ora_fine_fmt
-                    })
+                    }
+                    if ev_date_str in events_by_date:
+                        events_by_date[ev_date_str].append(ev_obj)
+                    else:
+                        events_by_date[ev_date_str] = [ev_obj]
         except Exception:
             pass
 
     def sort_key(ev):
         return (1, 0) if ev.get("is_allday") else (0, ev.get("start_min", 0))
-    events.sort(key=sort_key)
 
+    for d_k, ev_list in events_by_date.items():
+        ev_list.sort(key=sort_key)
+        _CALDAV_CACHE_BY_DATE[d_k] = {"timestamp": now, "data": ev_list}
+
+    target_events = events_by_date.get(date_str, [])
     _CALDAV_CACHE["timestamp"] = now
     _CALDAV_CACHE["date_str"] = date_str
-    _CALDAV_CACHE["data"] = events
+    _CALDAV_CACHE["data"] = target_events
     try:
         with open(_CALDAV_CACHE_FILE, "w", encoding="utf-8") as f:
-            json.dump({"timestamp": now.isoformat(), "date_str": date_str, "data": events}, f, ensure_ascii=False)
+            json.dump({"timestamp": now.isoformat(), "date_str": date_str, "data": target_events}, f, ensure_ascii=False)
     except Exception:
         pass
-    return events
+    return target_events
 
-def get_icloud_events(env, target_date=None, force_refresh=False):
-    global _CALDAV_CACHE
+def get_icloud_events(env, target_date=None, force_refresh=False, mock_events=False):
+    global _CALDAV_CACHE, _CALDAV_CACHE_BY_DATE
     now = datetime.now()
     if target_date is None:
         target_date = now.date()
@@ -398,6 +523,23 @@ def get_icloud_events(env, target_date=None, force_refresh=False):
         target_date = target_date.date()
 
     date_str = target_date.strftime("%Y-%m-%d")
+
+    if mock_events:
+        mock_data = {
+            "2026-07-16": [
+                {"summary": "Allenamento Nuoto", "start_min": 17*60+30, "end_min": 19*60, "ora": "17:30", "ora_fine": "19:00", "location": "Padovanuoto", "is_allday": False}
+            ],
+            "2026-07-17": [
+                {"summary": "Guida per patente", "start_min": 10*60, "end_min": 11*60+30, "ora": "10:00", "ora_fine": "11:30", "location": "Autoscuola Severi", "is_allday": False}
+            ],
+            "2026-12-27": [
+                {"summary": "Pranzo in famiglia", "start_min": 12*60+30, "end_min": 15*60, "ora": "12:30", "ora_fine": "15:00", "location": "Casa Nonni", "is_allday": False}
+            ],
+            "2027-03-29": [
+                {"summary": "Grigliata con amici", "start_min": 12*60, "end_min": 17*60, "ora": "12:00", "ora_fine": "17:00", "location": "Parco dei Colli", "is_allday": False}
+            ]
+        }
+        return mock_data.get(date_str, [])
 
     # Carica da cache disco se la memoria è vuota
     if not _CALDAV_CACHE["timestamp"] and os.path.exists(_CALDAV_CACHE_FILE):
@@ -407,6 +549,8 @@ def get_icloud_events(env, target_date=None, force_refresh=False):
                 _CALDAV_CACHE["timestamp"] = datetime.fromisoformat(saved.get("timestamp"))
                 _CALDAV_CACHE["date_str"] = saved.get("date_str")
                 _CALDAV_CACHE["data"] = saved.get("data", [])
+                if saved.get("date_str"):
+                    _CALDAV_CACHE_BY_DATE[saved["date_str"]] = {"timestamp": _CALDAV_CACHE["timestamp"], "data": _CALDAV_CACHE["data"]}
         except Exception:
             pass
 
@@ -417,16 +561,25 @@ def get_icloud_events(env, target_date=None, force_refresh=False):
     if caldav_user and caldav_pwd:
         if force_refresh:
             _CALDAV_CACHE["timestamp"] = None
+            if date_str in _CALDAV_CACHE_BY_DATE:
+                del _CALDAV_CACHE_BY_DATE[date_str]
 
-        # Cache di 30 secondi per la stessa data (risposta istantanea e aggiornamento ad ogni ciclo)
+        # Cache di 45 secondi per la specifica data (risposta istantanea e supporto multi-giorno)
+        if not force_refresh and date_str in _CALDAV_CACHE_BY_DATE:
+            entry = _CALDAV_CACHE_BY_DATE[date_str]
+            if (now - entry["timestamp"]).total_seconds() < 45:
+                return entry["data"]
+
         if _CALDAV_CACHE["timestamp"] and _CALDAV_CACHE["date_str"] == date_str:
-            if (now - _CALDAV_CACHE["timestamp"]).total_seconds() < 30:
+            if (now - _CALDAV_CACHE["timestamp"]).total_seconds() < 45:
                 return _CALDAV_CACHE["data"]
 
         try:
             return fetch_caldav_events_direct(caldav_user, caldav_pwd, target_date)
         except Exception as e:
             print("CalDAV fetch error (fallback to cache):", e)
+            if date_str in _CALDAV_CACHE_BY_DATE:
+                return _CALDAV_CACHE_BY_DATE[date_str]["data"]
             if _CALDAV_CACHE["data"]:
                 return _CALDAV_CACHE["data"]
 
@@ -739,6 +892,17 @@ def build_dashboard_html(query_params):
         except Exception:
             pass
 
+    holiday_param = query_params.get("holiday", [""])[0].lower()
+    if holiday_param:
+        if holiday_param == "summer":
+            now = now.replace(year=2026, month=7, day=16)
+        elif holiday_param == "winter":
+            now = now.replace(year=2026, month=12, day=27)
+        elif holiday_param == "carnival":
+            now = now.replace(year=2027, month=2, day=9)
+        elif holiday_param == "easter":
+            now = now.replace(year=2027, month=3, day=29)
+
     if time_param and ":" in time_param:
         try:
             th, tm = map(int, time_param.split(":"))
@@ -784,6 +948,11 @@ def build_dashboard_html(query_params):
     if override_day:
         giorno_key = override_day
         giorno_titolo = override_day.capitalize()
+
+    global ORARIO_DATA, LIBRI_DATA
+    ORARIO_DATA = load_orario_data()
+    LIBRI_DATA = load_libri_data()
+    load_school_calendar_config()
 
     # Classificazione accurata giorno di scuola vs vacanza ('holiday') vs ponte ('bridge') vs domenica
     target_d_obj = target_date.date() if isinstance(target_date, datetime) else target_date
@@ -840,7 +1009,8 @@ def build_dashboard_html(query_params):
     meteo = get_weather()
     compiti = get_classeviva_agenda(env)
     force_cal_refresh = query_params.get("refresh", [""])[0] in ["1", "true", "True"]
-    icloud_events = get_icloud_events(env, target_date=target_date, force_refresh=force_cal_refresh)
+    mock_events = query_params.get("mock_events", [""])[0] in ["1", "true", "True"]
+    icloud_events = get_icloud_events(env, target_date=target_date, force_refresh=force_cal_refresh, mock_events=mock_events)
     has_icloud = len(icloud_events) > 0
 
     # Lettura percentuale reale batteria Kindle e stato di carica
@@ -919,147 +1089,303 @@ def build_dashboard_html(query_params):
         </div>
         '''
 
-    # Colonna Sinistra (se non ci sono lezioni scolastiche o sono terminate da 30m) -> LINEA DEL TEMPO GIORNALIERA
+    # Colonna Sinistra (se non ci sono lezioni scolastiche o sono terminate da 30m)
     if not show_school_schedule:
-        allday_events = [e for e in icloud_events if e.get("is_allday")]
-        timed_events = [e for e in icloud_events if not e.get("is_allday")]
-
-        # 1. Eventi tutta la giornata (mostrati in cima, compatti, senza occupare la timeline oraria)
-        allday_html = ""
-        if allday_events:
-            chips = ""
-            for ev in allday_events:
-                chips += f'''
-                <div style="display:inline-flex;align-items:center;border:1.5px solid #000;border-radius:6px;padding:3px 8px;background:#fff;margin-right:6px;margin-bottom:4px;font-size:11.5px;font-weight:900;">
-                  <span>{ev.get("summary","")}</span>
-                </div>
-                '''
-            allday_html = f'''
-            <div style="margin-bottom:8px;padding-bottom:6px;border-bottom:1.5px dashed #000;">
-              <div style="font-size:10px;font-weight:900;text-transform:uppercase;color:#444;margin-bottom:4px;letter-spacing:0.3px;">Tutto il giorno</div>
-              <div style="display:flex;flex-wrap:wrap;">{chips}</div>
-            </div>
-            '''
-
-        # 2. Linea del tempo della giornata (07:00 - 23:00)
-        # 16 ore = 960 minuti totali, altezza timeline proporzionata
-        t_start = 7 * 60   # 07:00
-        t_end = 23 * 60    # 23:00
-        total_span = t_end - t_start
-
-        # Marker delle ore principali (ogni 2 ore: 08:00, 10:00, 12:00, 14:00, 16:00, 18:00, 20:00, 22:00)
-        hour_markers = ""
-        for h in range(8, 23, 2):
-            pos_pct = ((h * 60 - t_start) / total_span) * 100
-            hour_markers += f'''
-            <div style="position:absolute;top:{pos_pct:.2f}%;left:0;right:0;display:flex;align-items:center;pointer-events:none;z-index:1;">
-              <span style="font-size:10px;font-weight:900;width:38px;color:#444;background:#fff;line-height:1;">{h:02d}:00</span>
-              <div style="flex:1;border-bottom:1px dashed #ccc;height:1px;"></div>
-            </div>
-            '''
-
-        # Blocchi grafici degli impegni posizionati esattamente sulla linea del tempo
-        timed_blocks = ""
-        now_min = now.hour * 60 + now.minute
-        now_line = ""
-        if t_start <= now_min <= t_end:
-            now_pos_pct = ((now_min - t_start) / total_span) * 100
-            now_line = f'''
-            <div id="timeline-now-line" style="position:absolute;top:{now_pos_pct:.2f}%;left:36px;right:0;border-bottom:2px solid #000;z-index:4;pointer-events:none;display:flex;align-items:center;">
-              <span id="timeline-now-badge" style="position:absolute;left:-36px;font-size:9.5px;font-weight:900;background:#000;color:#fff;padding:1px 3px;border-radius:2px;">{now.strftime('%H:%M')}</span>
-            </div>
-            '''
-
-        if timed_events:
-            for ev in timed_events:
-                s_min = max(t_start, min(t_end, ev.get("start_min", t_start)))
-                e_min = max(t_start, min(t_end, ev.get("end_min", s_min + 60)))
-                if e_min <= s_min:
-                    e_min = s_min + 45
-
-                top_pct = ((s_min - t_start) / total_span) * 100
-                height_pct = max(9.0, ((e_min - s_min) / total_span) * 100)
-                if top_pct + height_pct > 100:
-                    height_pct = 100 - top_pct
-
-                time_label = ev.get("ora", "")
-                if ev.get("ora_fine"):
-                    time_label += f" - {ev.get('ora_fine')}"
-
-                # Mostra dettagli extra (luogo, descrizione) SE E SOLO SE c'è abbastanza spazio verticale nel blocco
-                extra_details_html = ""
-                loc_text = ev.get("location", "").strip()
-                desc_text = ev.get("desc", "").strip()
-                # Rimuovi prefissi generici
-                if desc_text.startswith("Calendario:"):
-                    desc_text = ""
-
-                # Se il blocco è alto almeno il 13% (circa 1 ora e mezza / 2 ore), c'è spazio per il luogo
-                if height_pct >= 12.0 and loc_text:
-                    clean_loc = strip_emojis(loc_text)
-                    if clean_loc:
-                        extra_details_html += f'<div style="font-size:10px;font-weight:700;opacity:0.85;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="display:inline-block;vertical-align:-1px;margin-right:3px;"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>{clean_loc}</div>'
-
-                # Se il blocco è ancora più alto (oltre 18%, cioè 3+ ore), mostra anche la descrizione/note
-                if height_pct >= 18.0 and desc_text:
-                    clean_desc = strip_emojis(desc_text)
-                    if clean_desc:
-                        extra_details_html += f'<div style="font-size:9.5px;font-weight:600;opacity:0.75;margin-top:2px;line-height:1.2;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">{clean_desc}</div>'
-
-                # Evidenzia se l'impegno è in corso adesso
-                is_active = (s_min <= now_min <= e_min)
-                bg = "#000" if is_active else "#fff"
-                color = "#fff" if is_active else "#000"
-                badge_bg = "#fff" if is_active else "#000"
-                badge_color = "#000" if is_active else "#fff"
-
-                timed_blocks += f'''
-                <div style="position:absolute;top:{top_pct:.2f}%;height:{height_pct:.2f}%;left:45px;right:4px;border:2px solid #000;border-radius:7px;background:{bg};color:{color};padding:5px 9px;box-sizing:border-box;z-index:2;display:flex;flex-direction:column;justify-content:center;overflow:hidden;">
-                  <div style="display:flex;justify-content:space-between;align-items:center;">
-                    <span style="font-size:13px;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:6px;">{ev.get("summary","")}</span>
-                    <span style="font-size:10px;font-weight:900;background:{badge_bg};color:{badge_color};padding:1px 5px;border-radius:3px;white-space:nowrap;">{time_label}</span>
-                  </div>
-                  {extra_details_html}
-                </div>
-                '''
-        else:
-            timed_blocks = '''
-            <div style="position:absolute;top:40%;left:45px;right:10px;border:1.5px dashed #000;border-radius:8px;padding:12px;text-align:center;font-size:12px;font-weight:800;color:#555;background:#fff;">
-              Nessun impegno a orario per oggi
-            </div>
-            '''
-
-        timeline_container = f'''
-        <div style="flex:1;position:relative;width:100%;min-height:360px;margin-top:4px;">
-          {hour_markers}
-          {now_line}
-          {timed_blocks}
-        </div>
-        '''
-
         if school_info["category"] == "holiday":
-            sub_status = f"Vacanze • {school_info['label']}"
-        elif school_info["category"] == "bridge":
-            sub_status = school_info["label"]
-        elif weekday == 6 or school_info["category"] == "sunday":
-            sub_status = "Domenica • Nessuna scuola"
-        elif has_school and now_min >= switch_timeline_min:
-            fine_h = fine_scuola_min // 60
-            fine_m = fine_scuola_min % 60
-            sub_status = f"Lezioni terminate ({fine_h:02d}:{fine_m:02d})"
-        else:
-            sub_status = "Oggi nessuna scuola"
+            # MODALITÀ VACANZE (HOLIDAY SYSTEM): AGENDA A CARD GIORNALIERE CON ALL-DAY E MINI-TIMELINE
+            holiday_type = school_info.get("holiday_type", "summer")
+            holiday_badges_map = {
+                "summer": "VACANZE ESTIVE",
+                "winter": "VACANZE DI NATALE",
+                "carnival": "CARNEVALE",
+                "easter": "VACANZE DI PASQUA"
+            }
+            holiday_badge_label = holiday_badges_map.get(holiday_type, school_info.get("label", "VACANZE").upper())
 
-        col_left_content = f'''
-        <div style="display:flex;flex-direction:column;height:100%;">
-          <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #000;padding-bottom:5px;margin-bottom:8px;">
-            <div style="font-size:13px;font-weight:900;text-transform:uppercase;letter-spacing:0.5px;">LINEA DEL TEMPO • GIORNATA</div>
-            <span style="font-size:11px;font-weight:900;color:#000;background:#eee;padding:2px 6px;border-radius:4px;border:1px solid #000;">{sub_status}</span>
-          </div>
-          {allday_html}
-          {timeline_container}
-        </div>
-        '''
+            # 3 giorni a partire da target_date
+            cards_html = ""
+            for i in range(3):
+                d_target = (target_date.date() if isinstance(target_date, datetime) else target_date) + timedelta(days=i)
+                d_events = get_icloud_events(env, target_date=d_target, force_refresh=force_cal_refresh, mock_events=mock_events)
+                d_allday = [e for e in d_events if e.get("is_allday")]
+                d_timed = [e for e in d_events if not e.get("is_allday")]
+
+                d_weekday = d_target.weekday()
+                d_name_it = GIORNI_NOMI_IT.get(d_weekday, "")
+                d_month_it = traduzioni_it.get(d_target.strftime("%B"), d_target.strftime("%B"))
+
+                # Intestazione e badge per ciascuna card
+                if i == 0:
+                    c_title = f"OGGI • {d_name_it.upper()} {d_target.day} {d_month_it.upper()}"
+                    c_badge = f"{len(d_timed)} IMPEGNI" if len(d_timed) > 0 else "OGGI"
+                elif i == 1:
+                    c_title = f"DOMANI • {d_name_it.upper()} {d_target.day} {d_month_it.upper()}"
+                    c_badge = f"{len(d_timed)} IMPEGNI" if len(d_timed) > 0 else "PROSSIMO GIORNO"
+                else:
+                    c_title = f"{d_name_it.upper()} {d_target.day} {d_month_it.upper()}"
+                    c_badge = f"{len(d_timed)} IMPEGNI" if len(d_timed) > 0 else ("WEEKEND" if d_weekday in [5, 6] else "GIORNATA LIBERA")
+
+                # All-day banners (solo impegni di calendario reali)
+                allday_banners = ""
+                if d_allday:
+                    chips = ""
+                    for ev in d_allday:
+                        clean_summ = strip_emojis(ev.get("summary", ""))
+                        chips += f'''
+                        <span style="display:inline-flex;align-items:center;border:1.5px solid #000;border-radius:4px;padding:2px 6px;background:#fff;font-size:11px;font-weight:900;margin-right:4px;margin-bottom:3px;">
+                          {clean_summ}
+                        </span>
+                        '''
+                    allday_banners = f'''
+                    <div style="margin-bottom:6px;padding-bottom:5px;border-bottom:1.5px dashed #000;display:flex;flex-wrap:wrap;align-items:center;">
+                      <span style="font-size:9.5px;font-weight:900;text-transform:uppercase;color:#444;letter-spacing:0.3px;margin-right:6px;">Tutto il giorno:</span>
+                      <div style="display:flex;flex-wrap:wrap;align-items:center;">{chips}</div>
+                    </div>
+                    '''
+
+                # Mini-timeline (struttura e stile speculari alla timeline principale dei giorni liberi)
+                now_min = now.hour * 60 + now.minute
+                if d_timed:
+                    items_rows = ""
+                    for ev in d_timed:
+                        clean_summ = strip_emojis(ev.get("summary", ""))
+                        s_min = ev.get("start_min", 0)
+                        e_min = ev.get("end_min", s_min + 60)
+                        ora_start = ev.get("ora", "")
+                        ora_fine = ev.get("ora_fine", "")
+                        time_label = ora_start
+                        if ora_fine:
+                            time_label += f" - {ora_fine}"
+
+                        is_active = (i == 0 and s_min <= now_min <= e_min)
+                        bg = "#000" if is_active else "#fff"
+                        color = "#fff" if is_active else "#000"
+                        badge_bg = "#fff" if is_active else "#000"
+                        badge_color = "#000" if is_active else "#fff"
+                        dot_bg = "#000" if is_active else "#000"
+
+                        loc_line = ""
+                        clean_loc = strip_emojis(ev.get("location", ""))
+                        if clean_loc:
+                            loc_line = f'''
+                            <div style="font-size:10px;font-weight:700;opacity:0.85;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="display:inline-block;vertical-align:-1px;margin-right:3px;">
+                                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                                <circle cx="12" cy="10" r="3"></circle>
+                              </svg>{clean_loc}
+                            </div>
+                            '''
+
+                        desc_line = ""
+                        clean_desc = strip_emojis(ev.get("desc", ""))
+                        if clean_desc and not clean_desc.startswith("Calendario:"):
+                            desc_line = f'<div style="font-size:9.5px;font-weight:600;opacity:0.75;margin-top:2px;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{clean_desc}</div>'
+
+                        items_rows += f'''
+                        <div style="display:flex;align-items:stretch;gap:7px;">
+                          <div style="width:36px;flex-shrink:0;text-align:right;padding-top:4px;">
+                            <span style="font-size:10.5px;font-weight:900;color:#222;line-height:1;">{ora_start}</span>
+                          </div>
+                          <div style="position:relative;width:8px;flex-shrink:0;display:flex;justify-content:center;">
+                            <div style="width:2px;background:#000;height:100%;"></div>
+                            <div style="position:absolute;top:6px;width:7px;height:7px;background:{dot_bg};border:1.5px solid #000;border-radius:50%;"></div>
+                          </div>
+                          <div style="flex:1;border:1.5px solid #000;border-radius:6px;background:{bg};color:{color};padding:4px 8px;margin-bottom:4px;box-sizing:border-box;">
+                            <div style="display:flex;justify-content:space-between;align-items:center;">
+                              <span style="font-size:12px;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:6px;">{clean_summ}</span>
+                              <span style="font-size:9.5px;font-weight:900;background:{badge_bg};color:{badge_color};padding:1px 5px;border-radius:3px;white-space:nowrap;">{time_label}</span>
+                            </div>
+                            {loc_line}
+                            {desc_line}
+                          </div>
+                        </div>
+                        '''
+                    mini_timeline_html = f'''
+                    <div style="display:flex;flex-direction:column;gap:3px;margin-top:2px;">
+                      {items_rows}
+                    </div>
+                    '''
+                else:
+                    d_day_info = get_school_day_info(d_target)
+                    if d_day_info["has_school"]:
+                        mini_timeline_html = '''
+                        <div style="display:flex;align-items:stretch;gap:7px;margin-top:2px;">
+                          <div style="width:36px;flex-shrink:0;text-align:right;padding-top:4px;">
+                            <span style="font-size:10.5px;font-weight:900;color:#222;line-height:1;">08:00</span>
+                          </div>
+                          <div style="position:relative;width:8px;flex-shrink:0;display:flex;justify-content:center;">
+                            <div style="width:2px;background:#000;height:100%;"></div>
+                            <div style="position:absolute;top:6px;width:7px;height:7px;background:#000;border-radius:50%;"></div>
+                          </div>
+                          <div style="flex:1;border:1.5px solid #000;border-radius:6px;background:#fff;color:#000;padding:4px 8px;box-sizing:border-box;">
+                            <div style="display:flex;justify-content:space-between;align-items:center;">
+                              <span style="font-size:12px;font-weight:900;">Lezioni ordinarie</span>
+                              <span style="font-size:9.5px;font-weight:900;background:#000;color:#fff;padding:1px 5px;border-radius:3px;">08:00 - 13:50</span>
+                            </div>
+                          </div>
+                        </div>
+                        '''
+                    else:
+                        empty_lbl = "Nessun impegno a orario per oggi" if i == 0 else "Nessun impegno a orario programmato"
+                        mini_timeline_html = f'''
+                        <div style="border:1.5px dashed #000;border-radius:6px;padding:6px 8px;text-align:center;font-size:11px;font-weight:800;color:#555;background:#fff;margin-top:2px;">
+                          {empty_lbl}
+                        </div>
+                        '''
+
+                cards_html += f'''
+                <div style="border:2px solid #000;border-radius:8px;padding:7px 9px;background:#fff;">
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;border-bottom:1.5px solid #000;padding-bottom:3px;">
+                    <span style="font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:0.4px;">{c_title}</span>
+                    <span style="font-size:10px;font-weight:800;color:#555;">{c_badge}</span>
+                  </div>
+                  {allday_banners}
+                  {mini_timeline_html}
+                </div>
+                '''
+
+            col_left_content = f'''
+            <div style="display:flex;flex-direction:column;">
+              <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #000;padding-bottom:5px;margin-bottom:8px;">
+                <div style="font-size:13px;font-weight:900;text-transform:uppercase;letter-spacing:0.5px;">AGENDA &amp; IMPEGNI</div>
+                <span style="font-size:11px;font-weight:900;color:#000;background:#eee;padding:2px 6px;border-radius:4px;border:1px solid #000;">{holiday_badge_label}</span>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:8px;">
+                {cards_html}
+              </div>
+            </div>
+            '''
+        else:
+            # LINEA DEL TEMPO GIORNALIERA ORDINARIA (PER DOMENICHE, PONTI E POMERIGGI FERIALI)
+            allday_events = [e for e in icloud_events if e.get("is_allday")]
+            timed_events = [e for e in icloud_events if not e.get("is_allday")]
+
+            # 1. Eventi tutta la giornata (mostrati in cima, compatti, senza occupare la timeline oraria)
+            allday_html = ""
+            if allday_events:
+                chips = ""
+                for ev in allday_events:
+                    chips += f'''
+                    <div style="display:inline-flex;align-items:center;border:1.5px solid #000;border-radius:6px;padding:3px 8px;background:#fff;margin-right:6px;margin-bottom:4px;font-size:11.5px;font-weight:900;">
+                      <span>{ev.get("summary","")}</span>
+                    </div>
+                    '''
+                allday_html = f'''
+                <div style="margin-bottom:8px;padding-bottom:6px;border-bottom:1.5px dashed #000;">
+                  <div style="font-size:10px;font-weight:900;text-transform:uppercase;color:#444;margin-bottom:4px;letter-spacing:0.3px;">Tutto il giorno</div>
+                  <div style="display:flex;flex-wrap:wrap;">{chips}</div>
+                </div>
+                '''
+
+            # 2. Linea del tempo della giornata (07:00 - 23:00)
+            t_start = 7 * 60   # 07:00
+            t_end = 23 * 60    # 23:00
+            total_span = t_end - t_start
+
+            hour_markers = ""
+            for h in range(8, 23, 2):
+                pos_pct = ((h * 60 - t_start) / total_span) * 100
+                hour_markers += f'''
+                <div style="position:absolute;top:{pos_pct:.2f}%;left:0;right:0;display:flex;align-items:center;pointer-events:none;z-index:1;">
+                  <span style="font-size:10px;font-weight:900;width:38px;color:#444;background:#fff;line-height:1;">{h:02d}:00</span>
+                  <div style="flex:1;border-bottom:1px dashed #ccc;height:1px;"></div>
+                </div>
+                '''
+
+            timed_blocks = ""
+            now_min = now.hour * 60 + now.minute
+            now_line = ""
+            if t_start <= now_min <= t_end:
+                now_pos_pct = ((now_min - t_start) / total_span) * 100
+                now_line = f'''
+                <div id="timeline-now-line" style="position:absolute;top:{now_pos_pct:.2f}%;left:36px;right:0;border-bottom:2px solid #000;z-index:4;pointer-events:none;display:flex;align-items:center;">
+                  <span id="timeline-now-badge" style="position:absolute;left:-36px;font-size:9.5px;font-weight:900;background:#000;color:#fff;padding:1px 3px;border-radius:2px;">{now.strftime('%H:%M')}</span>
+                </div>
+                '''
+
+            if timed_events:
+                for ev in timed_events:
+                    s_min = max(t_start, min(t_end, ev.get("start_min", t_start)))
+                    e_min = max(t_start, min(t_end, ev.get("end_min", s_min + 60)))
+                    if e_min <= s_min:
+                        e_min = s_min + 45
+
+                    top_pct = ((s_min - t_start) / total_span) * 100
+                    height_pct = max(9.0, ((e_min - s_min) / total_span) * 100)
+                    if top_pct + height_pct > 100:
+                        height_pct = 100 - top_pct
+
+                    time_label = ev.get("ora", "")
+                    if ev.get("ora_fine"):
+                        time_label += f" - {ev.get('ora_fine')}"
+
+                    extra_details_html = ""
+                    loc_text = ev.get("location", "").strip()
+                    desc_text = ev.get("desc", "").strip()
+                    if desc_text.startswith("Calendario:"):
+                        desc_text = ""
+
+                    if height_pct >= 12.0 and loc_text:
+                        clean_loc = strip_emojis(loc_text)
+                        if clean_loc:
+                            extra_details_html += f'<div style="font-size:10px;font-weight:700;opacity:0.85;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="display:inline-block;vertical-align:-1px;margin-right:3px;"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>{clean_loc}</div>'
+
+                    if height_pct >= 18.0 and desc_text:
+                        clean_desc = strip_emojis(desc_text)
+                        if clean_desc:
+                            extra_details_html += f'<div style="font-size:9.5px;font-weight:600;opacity:0.75;margin-top:2px;line-height:1.2;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">{clean_desc}</div>'
+
+                    is_active = (s_min <= now_min <= e_min)
+                    bg = "#000" if is_active else "#fff"
+                    color = "#fff" if is_active else "#000"
+                    badge_bg = "#fff" if is_active else "#000"
+                    badge_color = "#000" if is_active else "#fff"
+
+                    timed_blocks += f'''
+                    <div style="position:absolute;top:{top_pct:.2f}%;height:{height_pct:.2f}%;left:45px;right:4px;border:2px solid #000;border-radius:7px;background:{bg};color:{color};padding:5px 9px;box-sizing:border-box;z-index:2;display:flex;flex-direction:column;justify-content:center;overflow:hidden;">
+                      <div style="display:flex;justify-content:space-between;align-items:center;">
+                        <span style="font-size:13px;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:6px;">{ev.get("summary","")}</span>
+                        <span style="font-size:10px;font-weight:900;background:{badge_bg};color:{badge_color};padding:1px 5px;border-radius:3px;white-space:nowrap;">{time_label}</span>
+                      </div>
+                      {extra_details_html}
+                    </div>
+                    '''
+            else:
+                timed_blocks = '''
+                <div style="position:absolute;top:40%;left:45px;right:10px;border:1.5px dashed #000;border-radius:8px;padding:12px;text-align:center;font-size:12px;font-weight:800;color:#555;background:#fff;">
+                  Nessun impegno a orario per oggi
+                </div>
+                '''
+
+            timeline_container = f'''
+            <div style="flex:1;position:relative;width:100%;min-height:360px;margin-top:4px;">
+              {hour_markers}
+              {now_line}
+              {timed_blocks}
+            </div>
+            '''
+
+            if school_info["category"] == "bridge":
+                sub_status = school_info["label"]
+            elif weekday == 6 or school_info["category"] == "sunday":
+                sub_status = "Domenica • Nessuna scuola"
+            elif has_school and now_min >= switch_timeline_min:
+                fine_h = fine_scuola_min // 60
+                fine_m = fine_scuola_min % 60
+                sub_status = f"Lezioni terminate ({fine_h:02d}:{fine_m:02d})"
+            else:
+                sub_status = "Oggi nessuna scuola"
+
+            col_left_content = f'''
+            <div style="display:flex;flex-direction:column;height:100%;">
+              <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #000;padding-bottom:5px;margin-bottom:8px;">
+                <div style="font-size:13px;font-weight:900;text-transform:uppercase;letter-spacing:0.5px;">LINEA DEL TEMPO • GIORNATA</div>
+                <span style="font-size:11px;font-weight:900;color:#000;background:#eee;padding:2px 6px;border-radius:4px;border:1px solid #000;">{sub_status}</span>
+              </div>
+              {allday_html}
+              {timeline_container}
+            </div>
+            '''
     else:
         col_left_content = f'''
         <div style="display:flex;flex-direction:column;height:100%;">
@@ -1128,27 +1454,72 @@ def build_dashboard_html(query_params):
         </div>
         '''
 
-    compiti_items = ""
-    if compiti and len(compiti) > 0:
-        for c in compiti[:3]:
-            is_test = c.get("is_test", False)
-            bg = "#000" if is_test else "#fff"
-            text_color = "#fff" if is_test else "#111"
-            title_color = "#fff" if is_test else "#000"
-            badge_bg = "#fff" if is_test else "#000"
-            badge_color = "#000" if is_test else "#fff"
+    if school_info["category"] == "holiday":
+        holiday_type = school_info.get("holiday_type", "summer")
+        h_tasks = get_holiday_tasks(holiday_type, target_d_obj, env)
+        if holiday_type == "summer":
+            compiti_header_title = "COMPITI & ATTIVITÀ ESTIVE"
+            compiti_header_badge = "STATO AVANZAMENTO"
+        elif holiday_type == "winter":
+            compiti_header_title = "COMPITI PER IL RIENTRO (7 GENNAIO)"
+            days_left = max(1, (date(2027, 1, 7) - target_d_obj).days) if target_d_obj < date(2027, 1, 7) else 0
+            compiti_header_badge = f"{days_left} GIORNI AL RIENTRO" if days_left > 0 else "RIENTRO OGGI"
+        elif holiday_type == "carnival":
+            compiti_header_title = "VERIFICHE & COMPITI AL RIENTRO"
+            compiti_header_badge = "RIENTRO GIOVEDÌ"
+        elif holiday_type == "easter":
+            compiti_header_title = "COMPITI PER IL RIENTRO (31 MARZO)"
+            days_left = max(1, (date(2027, 3, 31) - target_d_obj).days) if target_d_obj < date(2027, 3, 31) else 0
+            compiti_header_badge = f"{days_left} GIORNI AL RIENTRO" if days_left > 0 else "RIENTRO OGGI"
+        else:
+            compiti_header_title = "COMPITI & PROMEMORIA"
+            compiti_header_badge = "ATTIVITÀ"
 
-            compiti_items += f'''
-            <div style="border:2px solid #000;border-radius:6px;padding:8px 10px;background:{bg};color:{text_color};">
-              <div style="display:flex;justify-content:space-between;align-items:center;font-weight:900;font-size:11.5px;color:{title_color};">
-                <span>{c["materia"]}</span>
-                <span style="font-size:10px;font-weight:900;background:{badge_bg};color:{badge_color};padding:1px 6px;border-radius:3px;">{c["data"]}</span>
-              </div>
-              <div style="font-size:11px;font-weight:600;color:{text_color};margin-top:4px;line-height:1.25;opacity:0.95;">{c["descrizione"]}</div>
-            </div>
-            '''
+        compiti_items = ""
+        if h_tasks:
+            for c in h_tasks[:3]:
+                is_test = c.get("is_test", False)
+                bg = "#000" if is_test else "#fff"
+                text_color = "#fff" if is_test else "#111"
+                title_color = "#fff" if is_test else "#000"
+                badge_bg = "#fff" if is_test else "#000"
+                badge_color = "#000" if is_test else "#fff"
+
+                compiti_items += f'''
+                <div style="border:2px solid #000;border-radius:6px;padding:7px 9px;background:{bg};color:{text_color};">
+                  <div style="display:flex;justify-content:space-between;align-items:center;font-weight:900;font-size:11.5px;color:{title_color};">
+                    <span>{strip_emojis(c["materia"])}</span>
+                    <span style="font-size:10px;font-weight:900;background:{badge_bg};color:{badge_color};padding:1px 6px;border-radius:3px;">{c["stato"]}</span>
+                  </div>
+                  <div style="font-size:11px;font-weight:600;color:{text_color};margin-top:3px;line-height:1.25;opacity:0.95;">{strip_emojis(c["descrizione"])}</div>
+                </div>
+                '''
+        else:
+            compiti_items = '<div style="border:1.5px dashed #000;border-radius:6px;padding:10px;text-align:center;font-size:11px;font-weight:700;color:#555;">Nessun compito registrato per il rientro</div>'
     else:
-        compiti_items = '<div style="border:1.5px dashed #000;border-radius:6px;padding:10px;text-align:center;font-size:11px;font-weight:700;color:#555;">Nessun compito registrato</div>'
+        compiti_header_title = "COMPITI & PROMEMORIA"
+        compiti_header_badge = "SYNC LIVE"
+        compiti_items = ""
+        if compiti and len(compiti) > 0:
+            for c in compiti[:3]:
+                is_test = c.get("is_test", False)
+                bg = "#000" if is_test else "#fff"
+                text_color = "#fff" if is_test else "#111"
+                title_color = "#fff" if is_test else "#000"
+                badge_bg = "#fff" if is_test else "#000"
+                badge_color = "#000" if is_test else "#fff"
+
+                compiti_items += f'''
+                <div style="border:2px solid #000;border-radius:6px;padding:8px 10px;background:{bg};color:{text_color};">
+                  <div style="display:flex;justify-content:space-between;align-items:center;font-weight:900;font-size:11.5px;color:{title_color};">
+                    <span>{c["materia"]}</span>
+                    <span style="font-size:10px;font-weight:900;background:{badge_bg};color:{badge_color};padding:1px 6px;border-radius:3px;">{c["data"]}</span>
+                  </div>
+                  <div style="font-size:11px;font-weight:600;color:{text_color};margin-top:4px;line-height:1.25;opacity:0.95;">{c["descrizione"]}</div>
+                </div>
+                '''
+        else:
+            compiti_items = '<div style="border:1.5px dashed #000;border-radius:6px;padding:10px;text-align:center;font-size:11px;font-weight:700;color:#555;">Nessun compito registrato</div>'
 
     html = f'''<!DOCTYPE html>
 <html lang="it">
@@ -1206,15 +1577,15 @@ def build_dashboard_html(query_params):
       {col_left_content}
     </section>
 
-    <!-- COLONNA DESTRA (ZAINO / METEO FORECAST / COMPITI CLASSEVIVA) -->
+    <!-- COLONNA DESTRA (ZAINO / METEO FORECAST / COMPITI) -->
     <section style="flex:1;display:flex;flex-direction:column;justify-content:space-between;height:100%;border-left:2.5px solid #000;padding-left:20px;">
       {col_right_top}
 
-      <!-- COMPITI CLASSEVIVA -->
+      <!-- COMPITI -->
       <div style="border-top:2px solid #000;padding-top:8px;margin-top:auto;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-          <div style="font-size:11.5px;font-weight:900;text-transform:uppercase;letter-spacing:0.4px;">COMPITI & PROMEMORIA (CLASSEVIVA)</div>
-          <span style="font-size:9.5px;font-weight:800;color:#555;">SYNC LIVE</span>
+          <div style="font-size:11.5px;font-weight:900;text-transform:uppercase;letter-spacing:0.4px;">{compiti_header_title}</div>
+          <span style="font-size:9.5px;font-weight:800;color:#555;">{compiti_header_badge}</span>
         </div>
         <div style="display:flex;flex-direction:column;gap:5px;">
           {compiti_items}

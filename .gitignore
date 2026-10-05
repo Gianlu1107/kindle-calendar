@@ -54,6 +54,7 @@ scenario_*.png
 *.png
 !docs/*.png
 !docs/assets/*.png
+!mockup_*.png
 calendar_feed.ics
 /tmp/
 *.log

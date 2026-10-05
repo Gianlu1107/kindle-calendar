@@ -104,16 +104,18 @@ class TestDashboardScheduleSwitch(unittest.TestCase):
 
     def test_holiday_dashboard_rendering(self):
         # Durante le vacanze di Natale (28 Dicembre 2026):
-        # Mostra la linea del tempo (free day come domenica), e NON l'orario delle lezioni
+        # Mostra l'agenda a card per le vacanze e compiti per il rientro, e NON l'orario delle lezioni
         html_xmas = build_dashboard_html({"date": ["2026-12-28"], "time": ["10:00"]})
-        self.assertIn("LINEA DEL TEMPO • GIORNATA", html_xmas)
-        self.assertIn("Vacanze • Vacanze di Natale", html_xmas)
+        self.assertIn("AGENDA &amp; IMPEGNI", html_xmas)
+        self.assertIn("VACANZE DI NATALE", html_xmas)
+        self.assertIn("COMPITI PER IL RIENTRO (7 GENNAIO)", html_xmas)
         self.assertNotIn("LEZIONI:", html_xmas)
 
         # Durante le vacanze estive (15 Luglio 2027):
         html_summer = build_dashboard_html({"date": ["2027-07-15"], "time": ["10:00"]})
-        self.assertIn("LINEA DEL TEMPO • GIORNATA", html_summer)
-        self.assertIn("Vacanze • Vacanze Estive", html_summer)
+        self.assertIn("AGENDA &amp; IMPEGNI", html_summer)
+        self.assertIn("VACANZE ESTIVE", html_summer)
+        self.assertIn("COMPITI & ATTIVITÀ ESTIVE", html_summer)
         self.assertNotIn("LEZIONI:", html_summer)
 
 if __name__ == "__main__":
