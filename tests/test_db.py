@@ -48,7 +48,7 @@ class TestPostgreSQLIntegration(unittest.TestCase):
             self.skipTest("PostgreSQL non raggiungibile")
         tasks = db.get_holiday_tasks_db("summer")
         self.assertIsNotNone(tasks)
-        self.assertGreater(len(tasks), 0)
+        self.assertEqual(len(tasks), 0)
 
         # Inserimento compito di test
         t_id = db.add_holiday_task(

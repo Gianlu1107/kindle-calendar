@@ -1,61 +1,6 @@
 {
-  "summer": [
-    {
-      "materia": "Italiano",
-      "descrizione": "Lettura: Il barone rampante (pag. 160 su 280)",
-      "stato": "IN CORSO • 57%"
-    },
-    {
-      "materia": "Matematica",
-      "descrizione": "Fascicolo estivo: 12 schede su 20 completate",
-      "stato": "IN CORSO • 60%"
-    },
-    {
-      "materia": "Informatica",
-      "descrizione": "Progetto personale e ripasso linguaggi web",
-      "stato": "COMPLETATO"
-    }
-  ],
-  "winter": [
-    {
-      "materia": "Matematica",
-      "descrizione": "Esercizi pag. 240 n. 12-25 su studio di funzione",
-      "stato": "GIOVEDÌ 7 GEN"
-    },
-    {
-      "materia": "Informatica",
-      "descrizione": "Completare schema ER e query del database",
-      "stato": "GIOVEDÌ 7 GEN"
-    },
-    {
-      "materia": "Italiano",
-      "descrizione": "Lettura capitoli 1-4 del romanzo e relazione",
-      "stato": "VENERDÌ 8 GEN"
-    }
-  ],
-  "carnival": [
-    {
-      "materia": "VERIFICA: Sistemi e Reti",
-      "descrizione": "Subnetting IPv4, routing statico e configurazione tabelle",
-      "stato": "GIOVEDÌ 11",
-      "is_test": true
-    },
-    {
-      "materia": "Storia",
-      "descrizione": "Capitolo 14: La rivoluzione industriale e il contesto sociale",
-      "stato": "VENERDÌ 12"
-    }
-  ],
-  "easter": [
-    {
-      "materia": "T.P.S.I.T.",
-      "descrizione": "Esercizio su Threading e Processi concorrenti in C",
-      "stato": "MERCOLEDÌ 31"
-    },
-    {
-      "materia": "Inglese",
-      "descrizione": "Reading comprehension Unit 6 e vocabolario tecnico",
-      "stato": "MERCOLEDÌ 31"
-    }
-  ]
+  "summer": [],
+  "winter": [],
+  "carnival": [],
+  "easter": []
 }

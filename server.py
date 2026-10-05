@@ -194,22 +194,6 @@ def get_holiday_tasks(holiday_type, target_d_obj, env):
         except Exception as e:
             print("Errore lettura compiti_vacanze.json:", e)
 
-    # Durante l'anno scolastico (winter, carnival, easter), se mancano voci manuali,
-    # integra i compiti futuri da ClasseViva
-    if holiday_type in ["winter", "carnival", "easter"] and len(tasks) == 0:
-        try:
-            cv_items = get_classeviva_agenda(env)
-            if cv_items:
-                for it in cv_items:
-                    tasks.append({
-                        "materia": it.get("materia", ""),
-                        "descrizione": it.get("descrizione", ""),
-                        "stato": it.get("data", ""),
-                        "is_test": it.get("is_test", False)
-                    })
-        except Exception:
-            pass
-
     return tasks
 
 def get_school_day_info(target_d):
@@ -1495,7 +1479,8 @@ def build_dashboard_html(query_params):
                 </div>
                 '''
         else:
-            compiti_items = '<div style="border:1.5px dashed #000;border-radius:6px;padding:10px;text-align:center;font-size:11px;font-weight:700;color:#555;">Nessun compito registrato per il rientro</div>'
+            empty_compiti_msg = "Nessun compito o attività registrata" if holiday_type == "summer" else "Nessun compito registrato per il rientro"
+            compiti_items = f'<div style="border:1.5px dashed #000;border-radius:6px;padding:10px;text-align:center;font-size:11px;font-weight:700;color:#555;">{empty_compiti_msg}</div>'
     else:
         compiti_header_title = "COMPITI & PROMEMORIA"
         compiti_header_badge = "SYNC LIVE"
