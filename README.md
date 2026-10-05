@@ -76,8 +76,19 @@ flowchart TD
 ### Transizione Intelligente del Layout e Routine Giornaliera
 - **Fascia Mattutina (06:30 - 08:00):** Orario delle lezioni a sinistra e checklist zaino a destra per la preparazione prima di uscire.
 - **Orario Scolastico (08:00 fino a termine lezioni + 30 min):** Visualizzazione lezioni del giorno con evidenziazione in tempo reale della materia in corso; meteo locale e compiti a destra.
-- **Pomeriggio (dopo 30 min dal termine lezioni):** Transizione automatica alla linea del tempo della giornata (07:00 - 23:00 con impegni di calendario e indicatore orario live) sulla sinistra, mantenendo il meteo e i compiti sulla destra.
-- **Fascia Serale/Notturna (21:30 - 06:30):** Orario scolastico del giorno successivo a sinistra e checklist per la preparazione dello zaino a destra.
+- **Pomeriggio (dopo 30 min dal termine lezioni - 21:30):** Transizione automatica alla linea del tempo della giornata (07:00 - 23:00 con impegni di calendario e indicatore orario live) sulla sinistra, mantenendo il meteo e i compiti sulla destra.
+- **Fascia Serale/Notturna (21:30 - 06:30):** Se l'indomani e un giorno di scuola effettivo, proiezione orario scolastico del giorno successivo a sinistra e checklist per la preparazione dello zaino a destra.
+
+### Calendario Scolastico Ufficiale e Gestione Vacanze (`holiday`)
+- **Anno Scolastico (Regione Veneto DGR n. 239/2026 e 712/2026):** Inizio lezioni il **10 settembre 2026**, termine lezioni l'**8 giugno 2027**.
+- **Giorni di Lezione Ordinari:** Dal Lunedi al Sabato all'interno del calendario scolastico (esclusi ponti e vacanze).
+- **Vacanze Scolastiche Ufficiali (categorizzate come `holiday`):**
+  - **Vacanze Estive:** Antecedenti al 10 settembre 2026 e successive all'8 giugno 2027 (`holiday_type: "summer"`).
+  - **Vacanze Natalizie / Invernali:** 24 dicembre 2026 - 6 gennaio 2027 (`holiday_type: "winter"`).
+  - **Vacanze di Carnevale:** 8 - 10 febbraio 2027 (`holiday_type: "carnival"`).
+  - **Vacanze Pasquali:** 25 - 30 marzo 2027 (`holiday_type: "easter"`).
+  - Durante questi periodi, la dashboard passa automaticamente alla vista libera (linea del tempo + meteo + impegni personali come la domenica), con il badge dedicato `Vacanze • <Nome Vacanza>`.
+- **Ponti e Festivita Singole (categorizzati come `bridge`):** Ponte dell'Immacolata (7 dic), Immacolata (8 dic), Liberazione (25 apr), Ponte 1 Maggio (29-30 apr), Festa Repubblica (2 giu).
 
 ---
 

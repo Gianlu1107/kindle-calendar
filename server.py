@@ -3,7 +3,7 @@ import json
 import re
 import threading
 import time as pytime
-from datetime import datetime, timedelta, time
+from datetime import datetime, timedelta, time, date
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import urllib.request
 import urllib.parse
@@ -59,51 +59,118 @@ GIORNI_NOMI_IT = {
     6: "Domenica"
 }
 
-# Calendario Scolastico Veneto 2026/2027 (DGR Veneto n. 239/2026 e s.m.i.)
-# Festività, vacanze e ponti deliberati per le scuole del Veneto
-PONTI_FESTIVITA_2026_2027 = {
+# Calendario Scolastico Regione Veneto 2026/2027 (DGR n. 239/2026 e DGR n. 712/2026)
+# ITI Francesco Severi - Padova
+SCHOOL_YEAR_START_2026_2027 = date(2026, 9, 10)  # Inizio ufficiale lezioni: 10 settembre 2026
+SCHOOL_YEAR_END_2026_2027 = date(2027, 6, 8)    # Fine ufficiale lezioni: 8 giugno 2027
+
+# Grandi Vacanze Scolastiche (categorizzate esplicitamente come 'holiday')
+# Include: Vacanze Estive (pre/post anno scolastico), Vacanze Invernali/Natale, Carnevale, Pasqua
+SCHOOL_HOLIDAYS_2026_2027 = [
+    # Vacanze Natalizie / Invernali: 24 dicembre 2026 - 6 gennaio 2027
+    {
+        "type": "winter",
+        "name": "Vacanze di Natale",
+        "start": date(2026, 12, 24),
+        "end": date(2027, 1, 6)
+    },
+    # Vacanze di Carnevale e Mercoledì delle Ceneri: 8 - 10 febbraio 2027
+    {
+        "type": "carnival",
+        "name": "Vacanze di Carnevale",
+        "start": date(2027, 2, 8),
+        "end": date(2027, 2, 10)
+    },
+    # Vacanze Pasquali: 25 - 30 marzo 2027
+    {
+        "type": "easter",
+        "name": "Vacanze di Pasqua",
+        "start": date(2027, 3, 25),
+        "end": date(2027, 3, 30)
+    }
+]
+
+# Ponti e Festività Nazionali/Locali (categorizzati come 'bridge' o 'festivity', NON come 'holiday')
+SCHOOL_BRIDGES_2026_2027 = {
     "2026-11-01": "Tutti i Santi",
     "2026-12-07": "Ponte dell'Immacolata",
     "2026-12-08": "Immacolata Concezione",
-    # Vacanze di Natale: 24 dicembre 2026 - 6 gennaio 2027
-    "2026-12-24": "Vacanze di Natale",
-    "2026-12-25": "Natale",
-    "2026-12-26": "Santo Stefano",
-    "2026-12-27": "Vacanze di Natale",
-    "2026-12-28": "Vacanze di Natale",
-    "2026-12-29": "Vacanze di Natale",
-    "2026-12-30": "Vacanze di Natale",
-    "2026-12-31": "Vacanze di Natale",
-    "2027-01-01": "Capodanno",
-    "2027-01-02": "Vacanze di Natale",
-    "2027-01-03": "Vacanze di Natale",
-    "2027-01-04": "Vacanze di Natale",
-    "2027-01-05": "Vacanze di Natale",
-    "2027-01-06": "Epifania",
-    # Carnevale e Mercoledì delle Ceneri: 8 - 10 febbraio 2027
-    "2027-02-08": "Vacanze di Carnevale",
-    "2027-02-09": "Martedì Grasso",
-    "2027-02-10": "Mercoledì delle Ceneri",
-    # Vacanze di Pasqua: 25 - 30 marzo 2027
-    "2027-03-25": "Vacanze di Pasqua",
-    "2027-03-26": "Venerdì Santo",
-    "2027-03-27": "Vacanze di Pasqua",
-    "2027-03-28": "Pasqua",
-    "2027-03-29": "Lunedì dell'Angelo",
-    "2027-03-30": "Vacanze di Pasqua",
-    # Anniversario della Liberazione
     "2027-04-25": "Festa della Liberazione",
-    # Ponte Festa del Lavoro: 29 e 30 aprile 2027 + 1 maggio
     "2027-04-29": "Ponte 1° Maggio",
     "2027-04-30": "Ponte 1° Maggio",
     "2027-05-01": "Festa del Lavoro",
-    # Ponte Festa della Repubblica: 31 maggio e 1 giugno 2027 + 2 giugno
     "2027-05-31": "Ponte 2 Giugno",
     "2027-06-01": "Ponte 2 Giugno",
     "2027-06-02": "Festa della Repubblica",
-    # Santo Patrono di Padova (Sant'Antonio)
     "2027-06-13": "Sant'Antonio (Patrono Padova)"
 }
+
+def get_school_day_info(target_d):
+    """
+    Classifica con precisione il giorno target rispetto al calendario scolastico.
+    Ritorna:
+      - category: 'school_day' | 'holiday' | 'bridge' | 'sunday'
+      - is_holiday: True SOLO per grandi vacanze (estive, invernali, carnevale, pasqua)
+      - holiday_type: 'summer' | 'winter' | 'carnival' | 'easter' | None
+      - label: Denominazione testuale della vacanza, ponte o festività
+      - has_school: True solo se è un giorno di scuola effettivo (Lun-Sab senza feste o vacanze)
+    """
+    if isinstance(target_d, datetime):
+        d_val = target_d.date()
+    else:
+        d_val = target_d
+
+    iso_str = d_val.strftime("%Y-%m-%d")
+
+    # 1. Vacanze Estive (prima dell'inizio o dopo la fine delle lezioni)
+    if d_val < SCHOOL_YEAR_START_2026_2027 or d_val > SCHOOL_YEAR_END_2026_2027:
+        return {
+            "category": "holiday",
+            "is_holiday": True,
+            "holiday_type": "summer",
+            "label": "Vacanze Estive",
+            "has_school": False
+        }
+
+    # 2. Grandi Vacanze Scolastiche (Invernali/Natale, Carnevale, Pasqua)
+    for hol in SCHOOL_HOLIDAYS_2026_2027:
+        if hol["start"] <= d_val <= hol["end"]:
+            return {
+                "category": "holiday",
+                "is_holiday": True,
+                "holiday_type": hol["type"],
+                "label": hol["name"],
+                "has_school": False
+            }
+
+    # 3. Ponti e Festività singole (NON vacanze grandi)
+    if iso_str in SCHOOL_BRIDGES_2026_2027:
+        return {
+            "category": "bridge",
+            "is_holiday": False,
+            "holiday_type": None,
+            "label": SCHOOL_BRIDGES_2026_2027[iso_str],
+            "has_school": False
+        }
+
+    # 4. Domenica (giorno libero)
+    if d_val.weekday() == 6:
+        return {
+            "category": "sunday",
+            "is_holiday": False,
+            "holiday_type": None,
+            "label": "Domenica",
+            "has_school": False
+        }
+
+    # 5. Giorno di Scuola effettivo (Lunedì - Sabato)
+    return {
+        "category": "school_day",
+        "is_holiday": False,
+        "holiday_type": None,
+        "label": "Giorno di Scuola",
+        "has_school": True
+    }
 
 def load_env():
     env_file = os.path.join(BASE_DIR, ".env")
@@ -651,6 +718,8 @@ def build_dashboard_html(query_params):
     env = load_env()
     ts_param = query_params.get("ts", [""])[0]
     time_param = query_params.get("time", [""])[0]
+    date_param = query_params.get("date", [""])[0]
+
     if ts_param:
         try:
             now = datetime.fromtimestamp(float(ts_param))
@@ -662,6 +731,13 @@ def build_dashboard_html(query_params):
         # pre-renderizzando l'immagine che comparirà al minuto :00
         if now.second >= 45:
             now = (now + timedelta(seconds=(60 - now.second))).replace(microsecond=0)
+
+    if date_param:
+        try:
+            p_date = datetime.fromisoformat(date_param).date()
+            now = now.replace(year=p_date.year, month=p_date.month, day=p_date.day)
+        except Exception:
+            pass
 
     if time_param and ":" in time_param:
         try:
@@ -709,14 +785,13 @@ def build_dashboard_html(query_params):
         giorno_key = override_day
         giorno_titolo = override_day.capitalize()
 
-    # Controllo Ponti e Festività Scolastiche Veneto 2026/2027
-    target_iso = target_date.strftime("%Y-%m-%d")
-    ponte_nome = PONTI_FESTIVITA_2026_2027.get(target_iso, "")
+    # Classificazione accurata giorno di scuola vs vacanza ('holiday') vs ponte ('bridge') vs domenica
+    target_d_obj = target_date.date() if isinstance(target_date, datetime) else target_date
+    school_info = get_school_day_info(target_d_obj)
 
     lezioni = list(ORARIO_DATA["schedule"].get(giorno_key, []))
-    # A scuola si va dal lunedì al sabato (weekday 0..5), salvo che non ci sia ponte/festa
-    is_holiday = bool(ponte_nome)
-    has_school = len(lezioni) > 0 and (weekday != 6 or override_day) and (not is_holiday or bool(override_day))
+    # A scuola si va nei giorni classificati 'school_day' (Lun-Sab feriali non vacanze), salvo override_day
+    has_school = (school_info["has_school"] and len(lezioni) > 0) or bool(override_day)
 
     # Calcolo orario di termine dell'ultima lezione del giorno odierno
     fine_scuola_min = 0
@@ -962,9 +1037,11 @@ def build_dashboard_html(query_params):
         </div>
         '''
 
-        if ponte_nome:
-            sub_status = ponte_nome
-        elif weekday == 6:
+        if school_info["category"] == "holiday":
+            sub_status = f"Vacanze • {school_info['label']}"
+        elif school_info["category"] == "bridge":
+            sub_status = school_info["label"]
+        elif weekday == 6 or school_info["category"] == "sunday":
             sub_status = "Domenica • Nessuna scuola"
         elif has_school and now_min >= switch_timeline_min:
             fine_h = fine_scuola_min // 60
@@ -1209,7 +1286,12 @@ class KindleHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(html_content)
         elif path == "/api/status":
-            res = json.dumps({"status": "running", "timestamp": datetime.now().isoformat()}).encode("utf-8")
+            now_dt = datetime.now()
+            res = json.dumps({
+                "status": "running",
+                "timestamp": now_dt.isoformat(),
+                "school_info": get_school_day_info(now_dt.date())
+            }, ensure_ascii=False).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(res)))

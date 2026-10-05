@@ -1,5 +1,6 @@
 import unittest
-from server import build_dashboard_html
+from datetime import date
+from server import build_dashboard_html, get_school_day_info
 
 class TestDashboardScheduleSwitch(unittest.TestCase):
     def test_school_in_progress(self):
@@ -53,6 +54,67 @@ class TestDashboardScheduleSwitch(unittest.TestCase):
         # Alle 23:15 -> scenario sera attivo
         html_evening = build_dashboard_html({"time": ["23:15"]})
         self.assertIn("PREPARAZIONE ZAINO PER DOMANI", html_evening)
+
+    def test_school_day_info_classification(self):
+        # Giorno di scuola ordinario (Lunedì 5 Ottobre 2026)
+        info_school = get_school_day_info(date(2026, 10, 5))
+        self.assertEqual(info_school["category"], "school_day")
+        self.assertFalse(info_school["is_holiday"])
+        self.assertTrue(info_school["has_school"])
+
+        # Domenica (11 Ottobre 2026)
+        info_sun = get_school_day_info(date(2026, 10, 11))
+        self.assertEqual(info_sun["category"], "sunday")
+        self.assertFalse(info_sun["is_holiday"])
+        self.assertFalse(info_sun["has_school"])
+
+        # Vacanze di Natale (28 Dicembre 2026) -> HOLIDAY (winter)
+        info_natale = get_school_day_info(date(2026, 12, 28))
+        self.assertEqual(info_natale["category"], "holiday")
+        self.assertTrue(info_natale["is_holiday"])
+        self.assertEqual(info_natale["holiday_type"], "winter")
+        self.assertFalse(info_natale["has_school"])
+
+        # Vacanze di Carnevale (9 Febbraio 2027) -> HOLIDAY (carnival)
+        info_carnevale = get_school_day_info(date(2027, 2, 9))
+        self.assertEqual(info_carnevale["category"], "holiday")
+        self.assertTrue(info_carnevale["is_holiday"])
+        self.assertEqual(info_carnevale["holiday_type"], "carnival")
+        self.assertFalse(info_carnevale["has_school"])
+
+        # Vacanze di Pasqua (27 Marzo 2027) -> HOLIDAY (easter)
+        info_pasqua = get_school_day_info(date(2027, 3, 27))
+        self.assertEqual(info_pasqua["category"], "holiday")
+        self.assertTrue(info_pasqua["is_holiday"])
+        self.assertEqual(info_pasqua["holiday_type"], "easter")
+        self.assertFalse(info_pasqua["has_school"])
+
+        # Vacanze Estive (15 Luglio 2027) -> HOLIDAY (summer)
+        info_estate = get_school_day_info(date(2027, 7, 15))
+        self.assertEqual(info_estate["category"], "holiday")
+        self.assertTrue(info_estate["is_holiday"])
+        self.assertEqual(info_estate["holiday_type"], "summer")
+        self.assertFalse(info_estate["has_school"])
+
+        # Ponte dell'Immacolata (7 Dicembre 2026) -> BRIDGE (non holiday grande)
+        info_ponte = get_school_day_info(date(2026, 12, 7))
+        self.assertEqual(info_ponte["category"], "bridge")
+        self.assertFalse(info_ponte["is_holiday"])
+        self.assertFalse(info_ponte["has_school"])
+
+    def test_holiday_dashboard_rendering(self):
+        # Durante le vacanze di Natale (28 Dicembre 2026):
+        # Mostra la linea del tempo (free day come domenica), e NON l'orario delle lezioni
+        html_xmas = build_dashboard_html({"date": ["2026-12-28"], "time": ["10:00"]})
+        self.assertIn("LINEA DEL TEMPO • GIORNATA", html_xmas)
+        self.assertIn("Vacanze • Vacanze di Natale", html_xmas)
+        self.assertNotIn("LEZIONI:", html_xmas)
+
+        # Durante le vacanze estive (15 Luglio 2027):
+        html_summer = build_dashboard_html({"date": ["2027-07-15"], "time": ["10:00"]})
+        self.assertIn("LINEA DEL TEMPO • GIORNATA", html_summer)
+        self.assertIn("Vacanze • Vacanze Estive", html_summer)
+        self.assertNotIn("LEZIONI:", html_summer)
 
 if __name__ == "__main__":
     unittest.main()
