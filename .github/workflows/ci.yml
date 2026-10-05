@@ -24,4 +24,5 @@ jobs:
       - name: Syntax and Compile Check
         run: |
           python3 -m py_compile server.py render_loop.py
-          echo "Syntax check completato con successo."
+          python3 -m unittest discover tests
+          echo "Syntax check e unit test completati con successo."

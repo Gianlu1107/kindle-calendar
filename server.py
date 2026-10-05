@@ -504,6 +504,7 @@ def get_classeviva_agenda(env):
 def build_dashboard_html(query_params):
     env = load_env()
     ts_param = query_params.get("ts", [""])[0]
+    time_param = query_params.get("time", [""])[0]
     if ts_param:
         try:
             now = datetime.fromtimestamp(float(ts_param))
@@ -515,6 +516,14 @@ def build_dashboard_html(query_params):
         # pre-renderizzando l'immagine che comparirà al minuto :00
         if now.second >= 45:
             now = (now + timedelta(seconds=(60 - now.second))).replace(microsecond=0)
+
+    if time_param and ":" in time_param:
+        try:
+            th, tm = map(int, time_param.split(":"))
+            now = now.replace(hour=th, minute=tm, second=0, microsecond=0)
+        except Exception:
+            pass
+
     cur_time = now.time()
 
     t_0630 = time(6, 30)
@@ -563,10 +572,39 @@ def build_dashboard_html(query_params):
     is_holiday = bool(ponte_nome)
     has_school = len(lezioni) > 0 and (weekday != 6 or override_day) and (not is_holiday or bool(override_day))
 
+    # Calcolo orario di termine dell'ultima lezione del giorno odierno
+    fine_scuola_min = 0
+    for l in lezioni:
+        f_str = l.get("fine", "")
+        if ":" in f_str:
+            try:
+                fh, fm = map(int, f_str.split(":"))
+                m_val = fh * 60 + fm
+                if m_val > fine_scuola_min:
+                    fine_scuola_min = m_val
+            except Exception:
+                pass
+
+    # Dopo la fine delle lezioni (es. 13:50 o 13:00 o 12:05), aspetta 30 minuti prima di passare al calendario
+    switch_timeline_min = fine_scuola_min + 30 if fine_scuola_min > 0 else 0
+    now_min = now.hour * 60 + now.minute
+
+    # Determina se visualizzare l'orario scolastico o la linea del tempo della giornata
+    show_school_schedule = False
+    if current_phase == "evening":
+        show_school_schedule = has_school
+    elif current_phase == "morning":
+        show_school_schedule = has_school
+    elif current_phase == "day":
+        if has_school and (now_min < switch_timeline_min or switch_timeline_min == 0):
+            show_school_schedule = True
+        else:
+            show_school_schedule = False
+
     # Evidenziazione lezione in corso
     ora_corrente_str = now.strftime("%H:%M")
     for l in lezioni:
-        l["in_corso"] = (current_phase == "day" and has_school and (l["inizio"] <= ora_corrente_str <= l["fine"]))
+        l["in_corso"] = (current_phase == "day" and show_school_schedule and (l["inizio"] <= ora_corrente_str <= l["fine"]))
 
     # Libri necessari
     materie_oggi = set(l["materia"] for l in lezioni)
@@ -659,8 +697,8 @@ def build_dashboard_html(query_params):
         </div>
         '''
 
-    # Colonna Sinistra (se non ci sono lezioni scolastiche) -> LINEA DEL TEMPO GIORNALIERA
-    if not has_school:
+    # Colonna Sinistra (se non ci sono lezioni scolastiche o sono terminate da 30m) -> LINEA DEL TEMPO GIORNALIERA
+    if not show_school_schedule:
         allday_events = [e for e in icloud_events if e.get("is_allday")]
         timed_events = [e for e in icloud_events if not e.get("is_allday")]
 
@@ -777,7 +815,17 @@ def build_dashboard_html(query_params):
         </div>
         '''
 
-        sub_status = ponte_nome if ponte_nome else ("Domenica • Nessuna scuola" if weekday == 6 else "Oggi nessuna scuola")
+        if ponte_nome:
+            sub_status = ponte_nome
+        elif weekday == 6:
+            sub_status = "Domenica • Nessuna scuola"
+        elif has_school and now_min >= switch_timeline_min:
+            fine_h = fine_scuola_min // 60
+            fine_m = fine_scuola_min % 60
+            sub_status = f"Lezioni terminate ({fine_h:02d}:{fine_m:02d})"
+        else:
+            sub_status = "Oggi nessuna scuola"
+
         col_left_content = f'''
         <div style="display:flex;flex-direction:column;height:100%;">
           <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #000;padding-bottom:5px;margin-bottom:8px;">
