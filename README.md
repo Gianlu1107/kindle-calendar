@@ -72,7 +72,7 @@ flowchart TD
 - **Fascia Mattutina (06:30 - 08:00):** Orario delle lezioni a sinistra e checklist zaino a destra per la preparazione prima di uscire.
 - **Orario Scolastico (08:00 fino a termine lezioni + 30 min):** Visualizzazione lezioni del giorno con evidenziazione in tempo reale della materia in corso; meteo locale e compiti a destra.
 - **Pomeriggio (dopo 30 min dal termine lezioni):** Transizione automatica alla linea del tempo della giornata (07:00 - 23:00 con impegni di calendario e indicatore orario live) sulla sinistra, mantenendo il meteo e i compiti sulla destra.
-- **Fascia Serale/Notturna (23:00 - 06:30):** Orario scolastico del giorno successivo a sinistra e checklist per la preparazione dello zaino a destra.
+- **Fascia Serale/Notturna (21:30 - 06:30):** Orario scolastico del giorno successivo a sinistra e checklist per la preparazione dello zaino a destra.
 
 ---
 

@@ -528,7 +528,7 @@ def build_dashboard_html(query_params):
 
     t_0630 = time(6, 30)
     t_0800 = time(8, 0)
-    t_2300 = time(23, 0)
+    t_2130 = time(21, 30)
 
     mode_param = query_params.get("mode", [""])[0]
     if mode_param in ["morning", "day", "evening"]:
@@ -536,7 +536,7 @@ def build_dashboard_html(query_params):
     else:
         if t_0630 <= cur_time < t_0800:
             current_phase = "morning"
-        elif t_0800 <= cur_time < t_2300:
+        elif t_0800 <= cur_time < t_2130:
             current_phase = "day"
         else:
             current_phase = "evening"

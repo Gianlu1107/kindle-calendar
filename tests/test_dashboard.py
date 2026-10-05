@@ -41,8 +41,16 @@ class TestDashboardScheduleSwitch(unittest.TestCase):
         self.assertIn("LEZIONI: Lunedi", html_morning)
         self.assertIn("ZAINO MATTINA • LIBRI DA PORTARE", html_morning)
 
-    def test_evening_backpack_tomorrow(self):
-        # Notte 23:15 -> Mostra preparazione zaino per domani
+    def test_evening_backpack_tomorrow_activation(self):
+        # Alle 21:20 -> ancora fase pomeridiana/serale (linea del tempo)
+        html_before_2130 = build_dashboard_html({"day": ["lunedi"], "time": ["21:20"]})
+        self.assertIn("LINEA DEL TEMPO • GIORNATA", html_before_2130)
+
+        # Alle 21:30 esatte -> scatta lo scenario sera (preparazione zaino domani)
+        html_at_2130 = build_dashboard_html({"time": ["21:30"]})
+        self.assertIn("PREPARAZIONE ZAINO PER DOMANI", html_at_2130)
+
+        # Alle 23:15 -> scenario sera attivo
         html_evening = build_dashboard_html({"time": ["23:15"]})
         self.assertIn("PREPARAZIONE ZAINO PER DOMANI", html_evening)
 
