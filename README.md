@@ -25,16 +25,15 @@ Il sistema aggrega e visualizza in tempo reale:
 
 ```mermaid
 flowchart TD
-    subgraph Client ["macOS Client"]
-        A["Apple Calendar.app"] -->|AppleScript| B["sync_calendar.py"]
-        B -->|SCP / rsync| C["calendar_feed.ics"]
-    end
-
-    subgraph Server ["Linux Server / LXC Container"]
-        C --> D["server.py (HTTP Server :5055)"]
+    subgraph Cloud ["Servizi Cloud"]
+        IC["Apple iCloud CalDAV"] -->|Sync Diretto Real-Time| D
         CV["ClasseViva API"] -->|Cache 1h| D
         GQ["Groq LLM API"] -->|Classificazione| D
         OM["Open-Meteo API"] --> D
+    end
+
+    subgraph Server ["Linux Server / LXC Container"]
+        D["server.py (HTTP Server :5055)"]
         D --> E["HTML Dashboard Template"]
         E -->|Pre-render a :55| F["render_loop.py (Playwright Chromium)"]
         F -->|ImageMagick 90 deg| G["/api/image (PNG 758x1024)"]
@@ -51,6 +50,12 @@ flowchart TD
 ---
 
 ## Specifiche Tecniche e Funzionalita
+
+### Sincronizzazione Calendario CalDAV Real-Time (Zero Mac)
+- **Nessuna dipendenza da computer locali:** Il server Linux interroga direttamente i server Apple (`caldav.icloud.com`) tramite autenticazione CalDAV standard.
+- **Aggiornamento Immediato:** Non appena un evento viene creato o modificato da iPhone, iPad, Apple Watch o Mac, viene salvato su iCloud e rilevato dal demone di sincronizzazione in background del server entro il minuto successivo.
+- **Cache Resiliente su Disco:** In caso di interruzioni di rete temporanee, il server mantiene l'ultimo snapshot valido senza mai mostrare viste vuote.
+- **Endpoint di Refresh Manuale:** E possibile forzare un aggiornamento immediato tramite `POST /api/calendar/refresh`.
 
 ### Sincronizzazione Atomica (:00)
 - Il motore di rendering Playwright Chromium e mantenuto residente in memoria RAM per azzerare i tempi di cold-start.

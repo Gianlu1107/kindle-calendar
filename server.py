@@ -1,6 +1,8 @@
 import os
 import json
 import re
+import threading
+import time as pytime
 from datetime import datetime, timedelta, time
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import urllib.request
@@ -215,10 +217,155 @@ def get_weather():
         ]
     }
 
-def get_icloud_events(env):
+_CALDAV_CLIENT = None
+_CALDAV_CALENDARS = []
+_CALDAV_CALENDARS_TS = None
+_CALDAV_CACHE = {"timestamp": None, "date_str": None, "data": []}
+_CALDAV_CACHE_FILE = "/tmp/caldav_events_cache.json"
+
+def get_caldav_client_and_calendars(username, password):
+    global _CALDAV_CLIENT, _CALDAV_CALENDARS, _CALDAV_CALENDARS_TS
+    now = datetime.now()
+    if _CALDAV_CALENDARS and _CALDAV_CALENDARS_TS and (now - _CALDAV_CALENDARS_TS).total_seconds() < 14400:
+        return _CALDAV_CLIENT, _CALDAV_CALENDARS
+    try:
+        import caldav
+        client = caldav.DAVClient(url="https://caldav.icloud.com", username=username, password=password)
+        principal = client.principal()
+        cals = []
+        for c in principal.calendars():
+            try:
+                name = c.get_display_name() if hasattr(c, "get_display_name") else getattr(c, "name", "")
+                if "promemoria" in name.lower() or "reminder" in name.lower():
+                    continue
+                cals.append(c)
+            except Exception:
+                pass
+        _CALDAV_CLIENT = client
+        _CALDAV_CALENDARS = cals
+        _CALDAV_CALENDARS_TS = now
+        return _CALDAV_CLIENT, _CALDAV_CALENDARS
+    except Exception as e:
+        print("CalDAV discovery warning:", e)
+        return _CALDAV_CLIENT, _CALDAV_CALENDARS
+
+def fetch_caldav_events_direct(caldav_user, caldav_pwd, target_date):
+    global _CALDAV_CACHE
+    now = datetime.now()
+    date_str = target_date.strftime("%Y-%m-%d")
+    _, calendars = get_caldav_client_and_calendars(caldav_user, caldav_pwd)
+    if not calendars:
+        return _CALDAV_CACHE["data"] if _CALDAV_CACHE["data"] else []
+
+    start_dt = datetime.combine(target_date, datetime.min.time())
+    end_dt = datetime.combine(target_date, datetime.max.time())
+    events = []
+    seen = set()
+
+    for cal in calendars:
+        try:
+            cal_events = cal.search(start=start_dt, end=end_dt, event=True, expand=True)
+            for ev in cal_events:
+                comp = ev.icalendar_component
+                s_dt = comp.get("dtstart").dt
+                summ = strip_emojis(str(comp.get("summary", "") or ""))
+                loc = strip_emojis(str(comp.get("location", "") or ""))
+                desc = strip_emojis(str(comp.get("description", "") or ""))
+
+                is_allday = not isinstance(s_dt, datetime)
+                if is_allday:
+                    start_min = 0
+                    end_min = 24 * 60
+                    ora_fmt = "Tutto il giorno"
+                    ora_fine_fmt = ""
+                else:
+                    s_local = s_dt.astimezone() if getattr(s_dt, "tzinfo", None) else s_dt
+                    start_min = s_local.hour * 60 + s_local.minute
+                    ora_fmt = f"{s_local.hour:02d}:{s_local.minute:02d}"
+
+                    e_dt = comp.get("dtend").dt if comp.get("dtend") else None
+                    if e_dt:
+                        e_local = e_dt.astimezone() if getattr(e_dt, "tzinfo", None) else e_dt
+                        end_min = e_local.hour * 60 + e_local.minute
+                        ora_fine_fmt = f"{e_local.hour:02d}:{e_local.minute:02d}"
+                    else:
+                        end_min = start_min + 60
+                        ora_fine_fmt = f"{(s_local.hour + 1) % 24:02d}:{s_local.minute:02d}"
+
+                dedup_key = (summ.lower(), ora_fmt)
+                if dedup_key not in seen:
+                    seen.add(dedup_key)
+                    events.append({
+                        "summary": summ,
+                        "location": loc,
+                        "desc": desc,
+                        "is_allday": is_allday,
+                        "start_min": start_min,
+                        "end_min": end_min,
+                        "ora": ora_fmt,
+                        "ora_fine": ora_fine_fmt
+                    })
+        except Exception:
+            pass
+
+    def sort_key(ev):
+        return (1, 0) if ev.get("is_allday") else (0, ev.get("start_min", 0))
+    events.sort(key=sort_key)
+
+    _CALDAV_CACHE["timestamp"] = now
+    _CALDAV_CACHE["date_str"] = date_str
+    _CALDAV_CACHE["data"] = events
+    try:
+        with open(_CALDAV_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump({"timestamp": now.isoformat(), "date_str": date_str, "data": events}, f, ensure_ascii=False)
+    except Exception:
+        pass
+    return events
+
+def get_icloud_events(env, target_date=None, force_refresh=False):
+    global _CALDAV_CACHE
+    now = datetime.now()
+    if target_date is None:
+        target_date = now.date()
+    elif isinstance(target_date, datetime):
+        target_date = target_date.date()
+
+    date_str = target_date.strftime("%Y-%m-%d")
+
+    # Carica da cache disco se la memoria è vuota
+    if not _CALDAV_CACHE["timestamp"] and os.path.exists(_CALDAV_CACHE_FILE):
+        try:
+            with open(_CALDAV_CACHE_FILE, "r", encoding="utf-8") as f:
+                saved = json.load(f)
+                _CALDAV_CACHE["timestamp"] = datetime.fromisoformat(saved.get("timestamp"))
+                _CALDAV_CACHE["date_str"] = saved.get("date_str")
+                _CALDAV_CACHE["data"] = saved.get("data", [])
+        except Exception:
+            pass
+
+    caldav_user = env.get("ICLOUD_APPLE_ID", "").strip()
+    caldav_pwd = env.get("ICLOUD_APP_PASSWORD", "").strip()
+
+    # 1. SINCRONIZZAZIONE DIRETTA CALDAV (REAL-TIME SERVER-TO-APPLE, ZERO MAC)
+    if caldav_user and caldav_pwd:
+        if force_refresh:
+            _CALDAV_CACHE["timestamp"] = None
+
+        # Cache di 30 secondi per la stessa data (risposta istantanea e aggiornamento ad ogni ciclo)
+        if _CALDAV_CACHE["timestamp"] and _CALDAV_CACHE["date_str"] == date_str:
+            if (now - _CALDAV_CACHE["timestamp"]).total_seconds() < 30:
+                return _CALDAV_CACHE["data"]
+
+        try:
+            return fetch_caldav_events_direct(caldav_user, caldav_pwd, target_date)
+        except Exception as e:
+            print("CalDAV fetch error (fallback to cache):", e)
+            if _CALDAV_CACHE["data"]:
+                return _CALDAV_CACHE["data"]
+
+    # 2. FALLBACK SU URL FEED ICAL O FILE LOCALE
     url = env.get("ICLOUD_ICAL_URL", "").strip()
     content = ""
-    # Se non c'è URL o punta a un file locale
     local_ics = "/opt/kindleCalendar/calendar_feed.ics"
     if not url and os.path.exists(local_ics):
         try:
@@ -238,7 +385,7 @@ def get_icloud_events(env):
         if url.startswith("webcal://"):
             url = "https://" + url[9:]
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "KindleServer/1.0"})
+            req = urllib.request.Request(url, headers={"User-Agent": "KindleServer/1.0", "Cache-Control": "no-cache"})
             with urllib.request.urlopen(req, timeout=4) as resp:
                 content = resp.read().decode("utf-8", errors="ignore")
         except Exception as e:
@@ -267,14 +414,14 @@ def get_icloud_events(env):
             elif line.startswith("DESCRIPTION:"):
                 cur["desc"] = line[12:].strip()
             elif line.startswith("END:VEVENT"):
-                now_str = datetime.now().strftime("%Y%m%d")
+                target_str = target_date.strftime("%Y%m%d")
                 start = cur.get("start_raw", "")
                 end = cur.get("end_raw", "")
                 summ = strip_emojis(cur.get("summary", ""))
                 cur["summary"] = summ
                 cur["location"] = strip_emojis(cur.get("location", ""))
                 cur["desc"] = strip_emojis(cur.get("desc", ""))
-                if start.startswith(now_str) or not start:
+                if start.startswith(target_str) or not start:
                     is_allday = True
                     start_min = 0
                     end_min = 24 * 60
@@ -306,7 +453,6 @@ def get_icloud_events(env):
                         seen.add(dedup_key)
                         events.append(cur)
 
-        # Ordina: prima per start_min se a orario, altrimenti in fondo
         def sort_key(ev):
             return (1, 0) if ev.get("is_allday") else (0, ev.get("start_min", 0))
         events.sort(key=sort_key)
@@ -618,7 +764,8 @@ def build_dashboard_html(query_params):
 
     meteo = get_weather()
     compiti = get_classeviva_agenda(env)
-    icloud_events = get_icloud_events(env)
+    force_cal_refresh = query_params.get("refresh", [""])[0] in ["1", "true", "True"]
+    icloud_events = get_icloud_events(env, target_date=target_date, force_refresh=force_cal_refresh)
     has_icloud = len(icloud_events) > 0
 
     # Lettura percentuale reale batteria Kindle e stato di carica
@@ -1068,6 +1215,16 @@ class KindleHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(res)))
             self.end_headers()
             self.wfile.write(res)
+        elif path == "/api/calendar":
+            env = load_env()
+            force_ref = query.get("refresh", [""])[0] in ["1", "true", "True"]
+            events = get_icloud_events(env, force_refresh=force_ref)
+            res = json.dumps({"status": "ok", "count": len(events), "events": events}, ensure_ascii=False).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(res)))
+            self.end_headers()
+            self.wfile.write(res)
         elif path == "/api/image":
             batt_val = query.get("batt", [""])[0]
             if batt_val and batt_val.isdigit():
@@ -1101,13 +1258,45 @@ class KindleHandler(BaseHTTPRequestHandler):
         else:
             self.send_response(404)
             self.end_headers()
+    def do_POST(self):
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path
+        if path in ["/api/calendar/refresh", "/api/calendar"]:
+            env = load_env()
+            events = get_icloud_events(env, force_refresh=True)
+            res = json.dumps({"status": "refreshed", "count": len(events), "events": events}, ensure_ascii=False).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(res)))
+            self.end_headers()
+            self.wfile.write(res)
+        else:
+            self.send_response(404)
+            self.end_headers()
+
     def do_HEAD(self):
         self.do_GET()
 
     def log_message(self, format, *args):
         pass
 
+def _caldav_background_loop():
+    while True:
+        try:
+            env = load_env()
+            user = env.get("ICLOUD_APPLE_ID", "").strip()
+            pwd = env.get("ICLOUD_APP_PASSWORD", "").strip()
+            if user and pwd:
+                fetch_caldav_events_direct(user, pwd, datetime.now().date())
+        except Exception:
+            pass
+        pytime.sleep(45)
+
 def run_server(port=5055):
+    # Avvia sincronizzazione continua CalDAV in background (ogni 45s)
+    bg_thread = threading.Thread(target=_caldav_background_loop, daemon=True)
+    bg_thread.start()
+
     server = HTTPServer(("0.0.0.0", port), KindleHandler)
     print(f"=== SERVER DASHBOARD 3ID ATTIVO ===")
     print(f"Locale: http://127.0.0.1:{port}")
