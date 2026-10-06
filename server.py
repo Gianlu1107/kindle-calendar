@@ -756,18 +756,9 @@ def get_classeviva_agenda(env):
                 materia = item.get("subjectDesc") or item.get("authorName") or "Compito"
                 note_testo = item.get("notes") or ""
 
-                # Priorità base temporale: Domani (0), Oggi (1), Date future (2)
-                tomorrow_date = (now + timedelta(days=1)).date()
-                if ev_date == tomorrow_date:
-                    priority = 0
-                elif ev_date == now.date():
-                    priority = 1
-                else:
-                    priority = 2
-
                 raw_items.append({
-                    "priority": priority,
                     "date_val": ev_date or (now + timedelta(days=99)).date(),
+                    "date_str": ev_date.isoformat() if ev_date else "",
                     "materia": materia,
                     "data": data_label,
                     "descrizione": note_testo,
@@ -827,14 +818,14 @@ def get_classeviva_agenda(env):
                     elif any(k in txt for k in ["verifica", "interrogazione", "compito in classe", "test"]):
                         it["is_test"] = True
 
-        # Ordina CRONOLOGICAMENTE: prima domani, poi i giorni a seguire in ordine di data crescente.
-        # Così si vedono tutti i compiti del giorno successivo (normali e verifiche) e non solo verifiche future!
-        raw_items.sort(key=lambda x: (x["priority"], x["date_val"]))
+        # Ordina SEMPRE in ordine cronologico crescente di data (Oggi -> Domani -> Giorni successivi)
+        raw_items.sort(key=lambda x: (x["date_val"], not x["is_test"]))
 
         for item in raw_items:
             compiti.append({
                 "materia": strip_emojis(item["materia"]),
                 "data": item["data"],
+                "date_str": item.get("date_str", ""),
                 "descrizione": strip_emojis(item["descrizione"]),
                 "is_test": item["is_test"]
             })
@@ -1485,8 +1476,66 @@ def build_dashboard_html(query_params):
         compiti_header_title = "COMPITI & PROMEMORIA"
         compiti_header_badge = "SYNC LIVE"
         compiti_items = ""
+
+        today_date = now.date()
+        tomorrow_date = today_date + timedelta(days=1)
+        hide_today_tasks = (cur_time >= time(19, 0))
+
+        visible_compiti = []
         if compiti and len(compiti) > 0:
-            for c in compiti[:3]:
+            for c in compiti:
+                # Estrazione o ricostruzione data evento
+                c_date = None
+                if "date_str" in c and c["date_str"]:
+                    try:
+                        c_date = date.fromisoformat(c["date_str"])
+                    except Exception:
+                        pass
+                if not c_date:
+                    raw_d = c.get("data", "")
+                    if raw_d == "Oggi":
+                        c_date = today_date
+                    elif raw_d == "Domani":
+                        c_date = tomorrow_date
+                    elif "/" in raw_d:
+                        try:
+                            g, m = map(int, raw_d.split("/"))
+                            y = today_date.year if m >= today_date.month else today_date.year + 1
+                            c_date = date(y, m, g)
+                        except Exception:
+                            pass
+                if not c_date:
+                    c_date = today_date + timedelta(days=99)
+
+                # Filtra eventi già passati prima di oggi
+                if c_date < today_date:
+                    continue
+
+                # Alle 19:00 spariscono i compiti della giornata stessa
+                if hide_today_tasks and c_date == today_date:
+                    continue
+
+                # Ricalcola etichetta temporale dinamica rispetto alla data odierna
+                if c_date == today_date:
+                    display_data = "Oggi"
+                elif c_date == tomorrow_date:
+                    display_data = "Domani"
+                else:
+                    display_data = c_date.strftime("%d/%m")
+
+                visible_compiti.append({
+                    "materia": c["materia"],
+                    "data": display_data,
+                    "date_val": c_date,
+                    "descrizione": c["descrizione"],
+                    "is_test": c.get("is_test", False)
+                })
+
+            # Ordina SEMPRE rigorosamente in ordine di data crescente
+            visible_compiti.sort(key=lambda x: (x["date_val"], not x["is_test"]))
+
+        if visible_compiti and len(visible_compiti) > 0:
+            for c in visible_compiti[:3]:
                 is_test = c.get("is_test", False)
                 bg = "#000" if is_test else "#fff"
                 text_color = "#fff" if is_test else "#111"

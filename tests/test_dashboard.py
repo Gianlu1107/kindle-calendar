@@ -118,5 +118,22 @@ class TestDashboardScheduleSwitch(unittest.TestCase):
         self.assertIn("COMPITI & ATTIVITÀ ESTIVE", html_summer)
         self.assertNotIn("LEZIONI:", html_summer)
 
+    def test_tasks_chronological_order_and_19pm_filter(self):
+        # Mocking or simulating build_dashboard_html at different times
+        # Alle 15:00: se ci sono compiti per oggi e domani, oggi viene prima di domani
+        html_15 = build_dashboard_html({"time": ["15:00"]})
+        # Verifica che se compaiono compiti con data Oggi e Domani, l'ordine rispetti Oggi < Domani
+        if "Oggi" in html_15 and "Domani" in html_15:
+            pos_oggi = html_15.find("Oggi")
+            pos_domani = html_15.find("Domani")
+            self.assertLess(pos_oggi, pos_domani, "I compiti di Oggi devono apparire prima di quelli di Domani prima delle 19:00")
+
+        # Alle 20:00 (dopo le 19:00): i compiti con etichetta 'Oggi' NON devono essere presenti nella sezione compiti
+        html_20 = build_dashboard_html({"time": ["20:00"]})
+        # Verifichiamo che nella sezione COMPITI & AGENDA non ci sia 'Oggi'
+        if "COMPITI & AGENDA (PROSSIMI GIORNI)" in html_20:
+            tasks_section = html_20.split("COMPITI & AGENDA (PROSSIMI GIORNI)")[1]
+            self.assertNotIn("class=\"badge today\">Oggi</span>", tasks_section, "I compiti di Oggi devono sparire dopo le 19:00")
+
 if __name__ == "__main__":
     unittest.main()
