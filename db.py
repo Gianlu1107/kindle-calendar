@@ -10,8 +10,14 @@ Gestisce la persistenza e le query per:
 import os
 import json
 from datetime import datetime, date
-import psycopg2
-from psycopg2.extras import RealDictCursor
+try:
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+    HAS_PSYCOPG2 = True
+except ImportError:
+    psycopg2 = None
+    RealDictCursor = None
+    HAS_PSYCOPG2 = False
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
