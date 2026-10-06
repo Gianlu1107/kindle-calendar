@@ -95,7 +95,17 @@ while true; do
 
     # Download fresh rendered snapshot and flash display
     if curl -s -f -m 5 "$URL" -o "$TMP_IMG"; then
-        $FBINK -c -f -g file="$TMP_IMG" 2>/dev/null
+        # Anti Burn-in & Ghosting mitigation:
+        # Ogni 30 minuti (:00 e :30), esegui un flash completo con clearing (-c -f)
+        # Negli altri minuti esegui un refresh rapido senza flash invasivo per non disturbare l'utente.
+        CUR_MIN=$(date +%M)
+        CUR_MIN=${CUR_MIN#0}; [ -z "$CUR_MIN" ] && CUR_MIN=0
+        if [ $((CUR_MIN % 30)) -eq 0 ]; then
+            $FBINK -q -k 2>/dev/null
+            $FBINK -q -c -f -g file="$TMP_IMG" 2>/dev/null
+        else
+            $FBINK -q -g file="$TMP_IMG" 2>/dev/null
+        fi
     else
         # Retry shortly in case of transient Wi-Fi latency
         sleep 2

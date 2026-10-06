@@ -1555,6 +1555,17 @@ def build_dashboard_html(query_params):
         else:
             compiti_items = '<div style="border:1.5px dashed #000;border-radius:6px;padding:10px;text-align:center;font-size:11px;font-weight:700;color:#555;">Nessun compito registrato</div>'
 
+    # Anti-Burn-in & Anti-Ghosting Pixel Shifting:
+    # Varia impercettibilmente il padding interno della dashboard di ±1 o ±2 pixel
+    # in base all'ora e al minuto. Sposta le linee divisorie e i testi statici
+    # evitando che le particelle elettroforetiche restino polarizzate negli stessi identici punti.
+    # All'occhio umano e assolutamente invisibile (1 o 2 pixel su 1024x758).
+    minute_idx = now.minute
+    pad_top = 18 + (minute_idx % 3)            # 18px, 19px, 20px
+    pad_bottom = 20 - (minute_idx % 3)         # 20px, 19px, 18px
+    pad_left = 24 + ((minute_idx // 3) % 3)    # 24px, 25px, 26px
+    pad_right = 26 - ((minute_idx // 3) % 3)   # 26px, 25px, 24px
+
     html = f'''<!DOCTYPE html>
 <html lang="it">
 <head>
@@ -1572,7 +1583,7 @@ def build_dashboard_html(query_params):
       background: #ffffff;
       color: #000000;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      padding: 18px 24px;
+      padding: {pad_top}px {pad_right}px {pad_bottom}px {pad_left}px;
       display: flex;
       flex-direction: column;
       justify-content: space-between;
