@@ -53,6 +53,7 @@ dashboard_kindle*.png
 scenario_*.png
 *.png
 !docs/*.png
+!docs/screenshots/*.png
 !docs/assets/*.png
 !mockup_*.png
 calendar_feed.ics

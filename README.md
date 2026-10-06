@@ -19,6 +19,8 @@ Il sistema aggrega e visualizza in tempo reale:
 
 ![Dashboard Preview](docs/preview.png)
 
+> Consulta la [Guida Completa agli Scenari e Stati della Dashboard](docs/scenari_dashboard.md) per visionare gli screenshot di tutti i comportamenti (mattina, scuola, pomeriggio post-scuola, sera, weekend e vacanze).
+
 ---
 
 ## Architettura di Sistema
