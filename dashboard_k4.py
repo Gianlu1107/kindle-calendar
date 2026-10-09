@@ -174,8 +174,8 @@ def build_k4_dashboard_html(query_params, weather_getter=None):
         </div>
         '''
 
-    # Helper rendering compiti compatti
-    def render_tasks_box_html(tasks, title, subtitle, max_items=4, show_full_desc=False):
+    # Helper rendering compiti compatti (senza limiti di righe, descrizioni complete)
+    def render_tasks_box_html(tasks, title, subtitle, max_items=4):
         filtered = [t for t in tasks if t.get("data") in ["Domani"] or (t.get("date_val", "") >= today_date.isoformat())]
         if not filtered:
             filtered = [t for t in tasks if t.get("date_val", "") >= today_date.isoformat()]
@@ -186,7 +186,6 @@ def build_k4_dashboard_html(query_params, weather_getter=None):
             border_style = "border:1.5px solid #000;border-left:5px solid #000;" if is_test else "border:1.5px solid #000;"
             badge_html = f'<span style="background:#000;color:#fff;font-size:9px;font-weight:900;padding:1px 5px;border-radius:3px;margin-right:4px;">VERIFICA</span>' if is_test else ''
             date_badge = f'<span style="border:1px solid #000;background:{"#000" if not is_test else "#fff"};color:{"#fff" if not is_test else "#000"};font-size:9.5px;font-weight:900;padding:1px 5px;border-radius:3px;">{t["data"]}</span>'
-            clamp_css = "" if show_full_desc else "display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;"
 
             items_html += f'''
             <div style="{border_style}border-radius:5px;padding:7px 10px;background:#fff;color:#000;">
@@ -197,7 +196,7 @@ def build_k4_dashboard_html(query_params, weather_getter=None):
                   {date_badge}
                 </div>
               </div>
-              <div style="font-size:11px;font-weight:600;line-height:1.22;margin-top:2px;{clamp_css}">{t["descrizione"]}</div>
+              <div style="font-size:11px;font-weight:600;line-height:1.26;margin-top:3px;word-break:break-word;">{t["descrizione"]}</div>
             </div>
             '''
         return f'''
@@ -322,8 +321,8 @@ def build_k4_dashboard_html(query_params, weather_getter=None):
         </div>
         '''
     elif phase == "afternoon_homework":
-        # 13:00 - 20:30: Compiti domani a tutta colonna a sinistra (compatti!), Materie domani a destra, Meteo orizzontale sotto!
-        col_left = render_tasks_box_html(nuvola_tasks, "COMPITI PER CASA &amp; VERIFICHE", "DOMANI", max_items=4, show_full_desc=False)
+        # 13:00 - 20:30: Compiti domani a tutta colonna a sinistra (senza limiti di righe!), Materie domani a destra, Meteo orizzontale sotto!
+        col_left = render_tasks_box_html(nuvola_tasks, "COMPITI PER CASA &amp; VERIFICHE", "DOMANI", max_items=4)
         col_right = render_lessons_html(tomorrow_lessons, f"LEZIONI DI DOMANI • {tomorrow_name.upper()}", "ZAINO", highlight_current=False)
         bottom_weather_html = render_horizontal_weather_bar_html(meteo)
     else:
