@@ -1701,7 +1701,7 @@ class KindleHandler(BaseHTTPRequestHandler):
         if path in ["/", "/index.html"]:
             if is_k4:
                 import dashboard_k4
-                html_content = dashboard_k4.build_k4_dashboard_html(query, weather_getter=get_weather_data).encode("utf-8")
+                html_content = dashboard_k4.build_k4_dashboard_html(query, weather_getter=get_weather).encode("utf-8")
             else:
                 html_content = build_dashboard_html(query).encode("utf-8")
             self.send_response(200)
@@ -1711,7 +1711,7 @@ class KindleHandler(BaseHTTPRequestHandler):
             self.wfile.write(html_content)
         elif path == "/k4":
             import dashboard_k4
-            html_content = dashboard_k4.build_k4_dashboard_html(query, weather_getter=get_weather_data).encode("utf-8")
+            html_content = dashboard_k4.build_k4_dashboard_html(query, weather_getter=get_weather).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(html_content)))
