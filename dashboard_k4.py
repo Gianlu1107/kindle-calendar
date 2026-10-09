@@ -84,10 +84,10 @@ def build_k4_dashboard_html(query_params, weather_getter=None):
     t_2030 = time(20, 30)
 
     # Identificazione fase oraria K4:
-    # 1. 07:00 - 08:30: "morning_prep" (Materie di Oggi a sinistra, Meteo + Compiti a destra)
-    # 2. 08:30 - 13:00: "school_progress" (Avanzamento lezioni a sinistra, Meteo + Compiti a destra)
+    # 1. 07:00 - 08:30: "morning_prep" (Meteo + Compiti a sinistra, Materie di Oggi a destra)
+    # 2. 08:30 - 13:00: "school_progress" (Meteo + Compiti a sinistra, Avanzamento lezioni a destra)
     # 3. 13:00 - 20:30: "afternoon_homework" (Compiti domani a sinistra, Materie domani a destra, Meteo orizzontale sotto)
-    # 4. 20:30 - 07:00: "night_prep" (Materie di domani per zaino a sinistra, Meteo + Compiti a destra)
+    # 4. 20:30 - 07:00: "night_prep" (Meteo + Compiti a sinistra, Materie di domani a destra)
     override_phase = query_params.get("phase", [""])[0]
     if override_phase in ["morning_prep", "school_progress", "afternoon_homework", "night_prep"]:
         phase = override_phase
@@ -303,37 +303,37 @@ def build_k4_dashboard_html(query_params, weather_getter=None):
 
     # Layout delle due colonne in base alla fase oraria
     if phase == "morning_prep":
-        # 07:00 - 08:30: Materie di oggi (SX), Meteo in alto a DX + Compiti in basso a DX
-        col_left = render_lessons_html(today_lessons, f"MATERIE DI OGGI • {today_name.upper()}", "ORARIO LEZIONI")
-        col_right = f'''
+        # 07:00 - 08:30: Meteo + Compiti a SX, Materie di oggi a DX
+        col_left = f'''
         <div style="display:flex;flex-direction:column;height:100%;">
           {render_vertical_weather_box_html(meteo)}
           {render_tasks_box_html(nuvola_tasks, "COMPITI & VERIFICHE", "NUVOLA", max_items=3)}
         </div>
         '''
+        col_right = render_lessons_html(today_lessons, f"MATERIE DI OGGI • {today_name.upper()}", "ORARIO LEZIONI")
     elif phase == "school_progress":
-        # 08:30 - 13:00: Avanzamento progressivo lezioni (SX), Meteo + Compiti a DX
-        col_left = render_lessons_html(today_lessons, f"LEZIONI IN CORSO • {today_name.upper()}", "IN DIRETTA", highlight_current=True)
-        col_right = f'''
+        # 08:30 - 13:00: Meteo + Compiti a SX, Avanzamento lezioni a DX
+        col_left = f'''
         <div style="display:flex;flex-direction:column;height:100%;">
           {render_vertical_weather_box_html(meteo)}
           {render_tasks_box_html(nuvola_tasks, "COMPITI & PROMEMORIA", "PROSSIMI", max_items=3)}
         </div>
         '''
+        col_right = render_lessons_html(today_lessons, f"LEZIONI IN CORSO • {today_name.upper()}", "IN DIRETTA", highlight_current=True)
     elif phase == "afternoon_homework":
-        # 13:00 - 20:30: Compiti domani a tutta colonna a sinistra (senza limiti di righe!), Materie domani a destra, Meteo orizzontale sotto!
+        # 13:00 - 20:30: Compiti domani a tutta colonna a sinistra, Materie domani a destra, Meteo orizzontale sotto!
         col_left = render_tasks_box_html(nuvola_tasks, "COMPITI PER CASA &amp; VERIFICHE", "DOMANI", max_items=4)
         col_right = render_lessons_html(tomorrow_lessons, f"LEZIONI DI DOMANI • {tomorrow_name.upper()}", "ZAINO", highlight_current=False)
         bottom_weather_html = render_horizontal_weather_bar_html(meteo)
     else:
-        # 20:30 - 07:00: Materie per domani per controllo zaino (SX), Meteo + Compiti a DX
-        col_left = render_lessons_html(tomorrow_lessons, f"MATERIE PER DOMANI • {tomorrow_name.upper()}", "SERA/NOTTE")
-        col_right = f'''
+        # 20:30 - 07:00: Meteo + Compiti a SX, Materie per domani per zaino a DX
+        col_left = f'''
         <div style="display:flex;flex-direction:column;height:100%;">
           {render_vertical_weather_box_html(meteo)}
           {render_tasks_box_html(nuvola_tasks, "COMPITI IN ARRIVO", "NUVOLA", max_items=3)}
         </div>
         '''
+        col_right = render_lessons_html(tomorrow_lessons, f"MATERIE PER DOMANI • {tomorrow_name.upper()}", "SERA/NOTTE")
 
     # Pixel Shifting K4 impercettibile (±1px su 800x600)
     minute_idx = now.minute
