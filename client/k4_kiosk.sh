@@ -4,6 +4,8 @@
 # Supports:
 #   - Atomic minute synchronization (:00)
 #   - Screen stay-alive (preventScreenSaver)
+#   - Complete lock of physical buttons (chmod 000 /dev/input/event*)
+#   - Permanent suppression of Amazon reader framework & "pagina 1 di 1" UI
 #   - Automatic background NTP time synchronization
 #   - FBInk native rendering for 600x800 e-paper
 #   - Anti-ghosting cleaning cycle every 30 minutes
@@ -14,6 +16,14 @@ export TZ='CET-1CEST,M3.5.0,M10.5.0/3'
 SERVER_BASE="http://192.168.1.250:5055/api/image"
 FBINK="/mnt/us/usbnet/bin/fbink"
 TMP_IMG="/tmp/dashboard_k4.png"
+
+# Ferma la UI nativa di Amazon (evita reader, booklet e la scritta "pagina 1 di 1")
+/sbin/stop framework 2>/dev/null
+/sbin/stop pillow 2>/dev/null
+/etc/init.d/framework stop 2>/dev/null
+
+# Disabilita completamente i tasti fisici (power, page-turn, 5-way d-pad, volume)
+chmod 000 /dev/input/event0 /dev/input/event1 /dev/input/event2 2>/dev/null
 
 # Disabilita screensaver e timeout di sospensione
 lipc-set-prop -i com.lab126.powerd preventScreenSaver 1 2>/dev/null
@@ -51,8 +61,9 @@ while true; do
         (ntpdate -u pool.ntp.org >/dev/null 2>&1 || ntpdate -u 192.168.1.250 >/dev/null 2>&1) &
     fi
 
-    # Mantieni sempre attivo lo schermo senza sleep
+    # Rinforza sempre la disattivazione screensaver e blocco tasti fisici
     lipc-set-prop -i com.lab126.powerd preventScreenSaver 1 2>/dev/null
+    chmod 000 /dev/input/event0 /dev/input/event1 /dev/input/event2 2>/dev/null
 
     # Lettura percentuale batteria
     BATT=$(gasgauge-info -s 2>/dev/null | tr -d '%')

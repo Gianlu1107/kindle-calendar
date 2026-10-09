@@ -9,6 +9,7 @@ RAW_IMG = os.path.join(BASE_DIR, "dashboard_kindle_raw.png")
 ROT_TMP = os.path.join(BASE_DIR, "dashboard_kindle_tmp.png")
 ROT_IMG = os.path.join(BASE_DIR, "dashboard_kindle.png")
 
+K4_RAW = os.path.join(BASE_DIR, "dashboard_k4_raw.png")
 K4_TMP = os.path.join(BASE_DIR, "dashboard_k4_tmp.png")
 K4_IMG = os.path.join(BASE_DIR, "dashboard_k4.png")
 PORT = os.environ.get("PORT", "5055")
@@ -24,10 +25,11 @@ async def render_for_timestamp(page_pw1, page_k4, target_ts):
     if os.path.exists(ROT_TMP):
         os.replace(ROT_TMP, ROT_IMG)
         
-    # 2. Render per Kindle 4 (800x600 nativo Landscape -> orientamento nativo K4)
+    # 2. Render per Kindle 4 (800x600 Landscape -> ruotato a 90° su 600x800 framebuffer K4)
     url_k4 = f"http://127.0.0.1:{PORT}/k4?ts={target_ts}"
     await page_k4.goto(url_k4, wait_until="networkidle")
-    await page_k4.screenshot(path=K4_TMP, full_page=False)
+    await page_k4.screenshot(path=K4_RAW, full_page=False)
+    subprocess.run(["convert", K4_RAW, "-rotate", "90", K4_TMP], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if os.path.exists(K4_TMP):
         os.replace(K4_TMP, K4_IMG)
 
