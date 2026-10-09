@@ -417,7 +417,8 @@ def fetch_caldav_events_direct(caldav_user, caldav_pwd, target_date):
         return _CALDAV_CACHE_BY_DATE.get(date_str, {}).get("data", _CALDAV_CACHE["data"] if _CALDAV_CACHE["data"] else [])
 
     window_days = 4
-    start_dt = datetime.combine(target_date, datetime.min.time())
+    # Query CalDAV estesa a 14 giorni prima per intercettare conferenze ed eventi multi-giorno iniziati prima
+    start_dt = datetime.combine(target_date - timedelta(days=14), datetime.min.time())
     end_dt = datetime.combine(target_date + timedelta(days=window_days), datetime.max.time())
     
     # Inizializza dizionario per ciascuna data della finestra
@@ -437,46 +438,77 @@ def fetch_caldav_events_direct(caldav_user, caldav_pwd, target_date):
                 summ = strip_emojis(str(comp.get("summary", "") or ""))
                 loc = strip_emojis(str(comp.get("location", "") or ""))
                 desc = strip_emojis(str(comp.get("description", "") or ""))
+                e_dt = comp.get("dtend").dt if comp.get("dtend") else None
 
                 is_allday = not isinstance(s_dt, datetime)
                 if is_allday:
-                    ev_date_str = s_dt.strftime("%Y-%m-%d")
-                    start_min = 0
-                    end_min = 24 * 60
-                    ora_fmt = "Tutto il giorno"
-                    ora_fine_fmt = ""
+                    s_date = s_dt
+                    if e_dt is not None:
+                        e_date = e_dt if not isinstance(e_dt, datetime) else e_dt.date()
+                    else:
+                        e_date = s_date + timedelta(days=1)
+
+                    # Espandi l'evento per ogni giorno compreso nell'intervallo [s_date, e_date)
+                    cur_d = s_date
+                    while cur_d < e_date:
+                        cur_d_str = cur_d.strftime("%Y-%m-%d")
+                        if cur_d_str in events_by_date:
+                            dedup_key = (cur_d_str, summ.lower(), "Tutto il giorno")
+                            if dedup_key not in seen:
+                                seen.add(dedup_key)
+                                events_by_date[cur_d_str].append({
+                                    "summary": summ,
+                                    "location": loc,
+                                    "desc": desc,
+                                    "is_allday": True,
+                                    "start_min": 0,
+                                    "end_min": 24 * 60,
+                                    "ora": "Tutto il giorno",
+                                    "ora_fine": ""
+                                })
+                        cur_d += timedelta(days=1)
                 else:
                     s_local = s_dt.astimezone() if getattr(s_dt, "tzinfo", None) else s_dt
-                    ev_date_str = s_local.strftime("%Y-%m-%d")
-                    start_min = s_local.hour * 60 + s_local.minute
-                    ora_fmt = f"{s_local.hour:02d}:{s_local.minute:02d}"
-
-                    e_dt = comp.get("dtend").dt if comp.get("dtend") else None
                     if e_dt:
                         e_local = e_dt.astimezone() if getattr(e_dt, "tzinfo", None) else e_dt
-                        end_min = e_local.hour * 60 + e_local.minute
-                        ora_fine_fmt = f"{e_local.hour:02d}:{e_local.minute:02d}"
                     else:
-                        end_min = start_min + 60
-                        ora_fine_fmt = f"{(s_local.hour + 1) % 24:02d}:{s_local.minute:02d}"
+                        e_local = s_local + timedelta(hours=1)
 
-                dedup_key = (ev_date_str, summ.lower(), ora_fmt)
-                if dedup_key not in seen:
-                    seen.add(dedup_key)
-                    ev_obj = {
-                        "summary": summ,
-                        "location": loc,
-                        "desc": desc,
-                        "is_allday": is_allday,
-                        "start_min": start_min,
-                        "end_min": end_min,
-                        "ora": ora_fmt,
-                        "ora_fine": ora_fine_fmt
-                    }
-                    if ev_date_str in events_by_date:
-                        events_by_date[ev_date_str].append(ev_obj)
-                    else:
-                        events_by_date[ev_date_str] = [ev_obj]
+                    s_date = s_local.date()
+                    e_date = e_local.date()
+
+                    cur_d = s_date
+                    while cur_d <= e_date:
+                        cur_d_str = cur_d.strftime("%Y-%m-%d")
+                        if cur_d_str in events_by_date:
+                            if cur_d == s_date:
+                                start_min = s_local.hour * 60 + s_local.minute
+                                ora_fmt = f"{s_local.hour:02d}:{s_local.minute:02d}"
+                            else:
+                                start_min = 0
+                                ora_fmt = "00:00"
+
+                            if cur_d == e_date:
+                                end_min = e_local.hour * 60 + e_local.minute
+                                ora_fine_fmt = f"{e_local.hour:02d}:{e_local.minute:02d}"
+                            else:
+                                end_min = 24 * 60
+                                ora_fine_fmt = "24:00"
+
+                            dedup_key = (cur_d_str, summ.lower(), ora_fmt)
+                            if dedup_key not in seen:
+                                seen.add(dedup_key)
+                                events_by_date[cur_d_str].append({
+                                    "summary": summ,
+                                    "location": loc,
+                                    "desc": desc,
+                                    "is_allday": False,
+                                    "start_min": start_min,
+                                    "end_min": end_min,
+                                    "ora": ora_fmt,
+                                    "ora_fine": ora_fine_fmt
+                                })
+                        cur_d += timedelta(days=1)
         except Exception:
             pass
 
@@ -625,37 +657,62 @@ def get_icloud_events(env, target_date=None, force_refresh=False, mock_events=Fa
                 cur["summary"] = summ
                 cur["location"] = strip_emojis(cur.get("location", ""))
                 cur["desc"] = strip_emojis(cur.get("desc", ""))
-                if start.startswith(target_str) or not start:
-                    is_allday = True
-                    start_min = 0
-                    end_min = 24 * 60
-                    ora_fmt = "Tutto il giorno"
-                    ora_fine_fmt = ""
 
-                    if "T" in start and len(start) >= 13:
-                        is_allday = False
-                        sh = int(start[9:11])
-                        sm = int(start[11:13])
-                        start_min = sh * 60 + sm
-                        ora_fmt = f"{start[9:11]}:{start[11:13]}"
-                        if "T" in end and len(end) >= 13:
-                            eh = int(end[9:11])
-                            em = int(end[11:13])
-                            end_min = eh * 60 + em
-                            ora_fine_fmt = f"{end[9:11]}:{end[11:13]}"
+                if start:
+                    is_allday = "T" not in start
+                    s_d_str = start[:8]
+                    e_d_str = end[:8] if end else s_d_str
+
+                    if is_allday:
+                        if e_d_str > s_d_str:
+                            matches = (s_d_str <= target_str < e_d_str)
                         else:
-                            end_min = start_min + 60
-                            ora_fine_fmt = f"{(sh+1)%24:02d}:{sm:02d}"
+                            matches = (s_d_str == target_str)
+                        if matches:
+                            dedup_key = (summ.lower(), "Tutto il giorno")
+                            if dedup_key not in seen:
+                                seen.add(dedup_key)
+                                events.append({
+                                    "summary": summ,
+                                    "location": cur["location"],
+                                    "desc": cur["desc"],
+                                    "is_allday": True,
+                                    "start_min": 0,
+                                    "end_min": 24 * 60,
+                                    "ora": "Tutto il giorno",
+                                    "ora_fine": ""
+                                })
+                    else:
+                        if s_d_str <= target_str <= e_d_str:
+                            if s_d_str == target_str and len(start) >= 13:
+                                sh, sm = int(start[9:11]), int(start[11:13])
+                                start_min = sh * 60 + sm
+                                ora_fmt = f"{sh:02d}:{sm:02d}"
+                            else:
+                                start_min = 0
+                                ora_fmt = "00:00"
 
-                    cur["is_allday"] = is_allday
-                    cur["start_min"] = start_min
-                    cur["end_min"] = end_min
-                    cur["ora"] = ora_fmt
-                    cur["ora_fine"] = ora_fine_fmt
-                    dedup_key = (summ.lower(), cur["ora"])
-                    if dedup_key not in seen:
-                        seen.add(dedup_key)
-                        events.append(cur)
+                            if e_d_str == target_str and len(end) >= 13:
+                                eh, em = int(end[9:11]), int(end[11:13])
+                                end_min = eh * 60 + em
+                                ora_fine_fmt = f"{eh:02d}:{em:02d}"
+                            else:
+                                end_min = 24 * 60
+                                ora_fine_fmt = "24:00"
+
+                            dedup_key = (summ.lower(), ora_fmt)
+                            if dedup_key not in seen:
+                                seen.add(dedup_key)
+                                events.append({
+                                    "summary": summ,
+                                    "location": cur["location"],
+                                    "desc": cur["desc"],
+                                    "is_allday": False,
+                                    "start_min": start_min,
+                                    "end_min": end_min,
+                                    "ora": ora_fmt,
+                                    "ora_fine": ora_fine_fmt
+                                })
 
         def sort_key(ev):
             return (1, 0) if ev.get("is_allday") else (0, ev.get("start_min", 0))
@@ -1279,52 +1336,108 @@ def build_dashboard_html(query_params):
                 '''
 
             if timed_events:
-                for ev in timed_events:
-                    s_min = max(t_start, min(t_end, ev.get("start_min", t_start)))
-                    e_min = max(t_start, min(t_end, ev.get("end_min", s_min + 60)))
-                    if e_min <= s_min:
-                        e_min = s_min + 45
+                # Partizionamento intervalli sovrapposti in colonne affiancate
+                sorted_evs = sorted(
+                    timed_events,
+                    key=lambda ev: (
+                        max(t_start, min(t_end, ev.get("start_min", t_start))),
+                        -(max(t_start, min(t_end, ev.get("end_min", ev.get("start_min", t_start) + 45))) - max(t_start, min(t_end, ev.get("start_min", t_start))))
+                    )
+                )
 
-                    top_pct = ((s_min - t_start) / total_span) * 100
-                    height_pct = max(9.0, ((e_min - s_min) / total_span) * 100)
-                    if top_pct + height_pct > 100:
-                        height_pct = 100 - top_pct
+                clusters = []
+                current_cluster = []
+                cluster_end = -1
+                for ev in sorted_evs:
+                    s = max(t_start, min(t_end, ev.get("start_min", t_start)))
+                    e = max(s + 30, min(t_end, ev.get("end_min", s + 45)))
+                    if not current_cluster:
+                        current_cluster.append(ev)
+                        cluster_end = e
+                    else:
+                        if s < cluster_end:
+                            current_cluster.append(ev)
+                            cluster_end = max(cluster_end, e)
+                        else:
+                            clusters.append(current_cluster)
+                            current_cluster = [ev]
+                            cluster_end = e
+                if current_cluster:
+                    clusters.append(current_cluster)
 
-                    time_label = ev.get("ora", "")
-                    if ev.get("ora_fine"):
-                        time_label += f" - {ev.get('ora_fine')}"
+                for cluster in clusters:
+                    cols_end = []
+                    assignments = []
+                    for ev in cluster:
+                        s = max(t_start, min(t_end, ev.get("start_min", t_start)))
+                        e = max(s + 30, min(t_end, ev.get("end_min", s + 45)))
+                        placed = False
+                        for c_idx in range(len(cols_end)):
+                            if s >= cols_end[c_idx]:
+                                cols_end[c_idx] = e
+                                assignments.append((ev, c_idx))
+                                placed = True
+                                break
+                        if not placed:
+                            c_idx = len(cols_end)
+                            cols_end.append(e)
+                            assignments.append((ev, c_idx))
 
-                    extra_details_html = ""
-                    loc_text = ev.get("location", "").strip()
-                    desc_text = ev.get("desc", "").strip()
-                    if desc_text.startswith("Calendario:"):
-                        desc_text = ""
+                    total_cols = len(cols_end)
 
-                    if height_pct >= 12.0 and loc_text:
-                        clean_loc = strip_emojis(loc_text)
-                        if clean_loc:
-                            extra_details_html += f'<div style="font-size:10px;font-weight:700;opacity:0.85;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="display:inline-block;vertical-align:-1px;margin-right:3px;"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>{clean_loc}</div>'
+                    for ev, col_idx in assignments:
+                        s_min = max(t_start, min(t_end, ev.get("start_min", t_start)))
+                        e_min = max(t_start, min(t_end, ev.get("end_min", s_min + 60)))
+                        if e_min <= s_min:
+                            e_min = s_min + 45
 
-                    if height_pct >= 18.0 and desc_text:
-                        clean_desc = strip_emojis(desc_text)
-                        if clean_desc:
-                            extra_details_html += f'<div style="font-size:9.5px;font-weight:600;opacity:0.75;margin-top:2px;line-height:1.2;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">{clean_desc}</div>'
+                        top_pct = ((s_min - t_start) / total_span) * 100
+                        height_pct = max(9.0, ((e_min - s_min) / total_span) * 100)
+                        if top_pct + height_pct > 100:
+                            height_pct = 100 - top_pct
 
-                    is_active = (s_min <= now_min <= e_min)
-                    bg = "#000" if is_active else "#fff"
-                    color = "#fff" if is_active else "#000"
-                    badge_bg = "#fff" if is_active else "#000"
-                    badge_color = "#000" if is_active else "#fff"
+                        time_label = ev.get("ora", "")
+                        if ev.get("ora_fine"):
+                            time_label += f" - {ev.get('ora_fine')}"
 
-                    timed_blocks += f'''
-                    <div style="position:absolute;top:{top_pct:.2f}%;height:{height_pct:.2f}%;left:45px;right:4px;border:2px solid #000;border-radius:7px;background:{bg};color:{color};padding:5px 9px;box-sizing:border-box;z-index:2;display:flex;flex-direction:column;justify-content:center;overflow:hidden;">
-                      <div style="display:flex;justify-content:space-between;align-items:center;">
-                        <span style="font-size:13px;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:6px;">{ev.get("summary","")}</span>
-                        <span style="font-size:10px;font-weight:900;background:{badge_bg};color:{badge_color};padding:1px 5px;border-radius:3px;white-space:nowrap;">{time_label}</span>
-                      </div>
-                      {extra_details_html}
-                    </div>
-                    '''
+                        extra_details_html = ""
+                        loc_text = ev.get("location", "").strip()
+                        desc_text = ev.get("desc", "").strip()
+                        if desc_text.startswith("Calendario:"):
+                            desc_text = ""
+
+                        if height_pct >= 12.0 and loc_text:
+                            clean_loc = strip_emojis(loc_text)
+                            if clean_loc:
+                                extra_details_html += f'<div style="font-size:9.5px;font-weight:700;opacity:0.85;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="display:inline-block;vertical-align:-1px;margin-right:2px;"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>{clean_loc}</div>'
+
+                        if height_pct >= 18.0 and desc_text:
+                            clean_desc = strip_emojis(desc_text)
+                            if clean_desc:
+                                extra_details_html += f'<div style="font-size:9px;font-weight:600;opacity:0.75;margin-top:2px;line-height:1.2;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">{clean_desc}</div>'
+
+                        is_active = (s_min <= now_min <= e_min)
+                        bg = "#000" if is_active else "#fff"
+                        color = "#fff" if is_active else "#000"
+                        badge_bg = "#fff" if is_active else "#000"
+                        badge_color = "#000" if is_active else "#fff"
+
+                        if total_cols == 1:
+                            col_pos_style = "left:45px;right:4px;"
+                        else:
+                            col_left_calc = f"calc(45px + (100% - 49px) * {col_idx / total_cols:.4f} + {2 if col_idx > 0 else 0}px)"
+                            col_width_calc = f"calc((100% - 49px) * {1.0 / total_cols:.4f} - 3px)"
+                            col_pos_style = f"left:{col_left_calc};width:{col_width_calc};"
+
+                        timed_blocks += f'''
+                        <div style="position:absolute;top:{top_pct:.2f}%;height:{height_pct:.2f}%;{col_pos_style}border:2px solid #000;border-radius:7px;background:{bg};color:{color};padding:5px 8px;box-sizing:border-box;z-index:2;display:flex;flex-direction:column;justify-content:flex-start;overflow:hidden;">
+                          <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+                            <span style="font-size:12px;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:4px;">{ev.get("summary","")}</span>
+                            <span style="font-size:9px;font-weight:900;background:{badge_bg};color:{badge_color};padding:1px 4px;border-radius:3px;white-space:nowrap;">{time_label}</span>
+                          </div>
+                          {extra_details_html}
+                        </div>
+                        '''
             else:
                 timed_blocks = '''
                 <div style="position:absolute;top:40%;left:45px;right:10px;border:1.5px dashed #000;border-radius:8px;padding:12px;text-align:center;font-size:12px;font-weight:800;color:#555;background:#fff;">

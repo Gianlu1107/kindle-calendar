@@ -9,6 +9,7 @@
 id_*
 kindle_rsa
 downloads/
+data/nuvola_session.json
 
 # Python artifacts
 __pycache__/
