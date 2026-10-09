@@ -1694,8 +1694,24 @@ class KindleHandler(BaseHTTPRequestHandler):
         path = parsed.path
         query = urllib.parse.parse_qs(parsed.query)
 
+        client_ip = self.client_address[0]
+        device_param = query.get("device", [""])[0].lower()
+        is_k4 = (device_param == "k4") or (client_ip == "192.168.1.29")
+
         if path in ["/", "/index.html"]:
-            html_content = build_dashboard_html(query).encode("utf-8")
+            if is_k4:
+                import dashboard_k4
+                html_content = dashboard_k4.build_k4_dashboard_html(query, weather_getter=get_weather_data).encode("utf-8")
+            else:
+                html_content = build_dashboard_html(query).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(html_content)))
+            self.end_headers()
+            self.wfile.write(html_content)
+        elif path == "/k4":
+            import dashboard_k4
+            html_content = dashboard_k4.build_k4_dashboard_html(query, weather_getter=get_weather_data).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(html_content)))
@@ -1725,22 +1741,31 @@ class KindleHandler(BaseHTTPRequestHandler):
             self.wfile.write(res)
         elif path == "/api/image":
             batt_val = query.get("batt", [""])[0]
+            batt_file = "/tmp/kindle_k4_battery.txt" if is_k4 else "/tmp/kindle_battery.txt"
             if batt_val and batt_val.isdigit():
                 try:
-                    with open("/tmp/kindle_battery.txt", "w") as bf:
+                    with open(batt_file, "w") as bf:
                         bf.write(batt_val)
                 except Exception:
                     pass
             chg_val = query.get("charging", [""])[0]
+            chg_file = "/tmp/kindle_k4_charging.txt" if is_k4 else "/tmp/kindle_charging.txt"
             if chg_val in ["0", "1", "true", "false", "True", "False"]:
                 try:
-                    with open("/tmp/kindle_charging.txt", "w") as cf:
+                    with open(chg_file, "w") as cf:
                         cf.write(chg_val)
                 except Exception:
                     pass
-            img_path = "/opt/kindleCalendar/dashboard_kindle.png"
-            if not os.path.exists(img_path):
-                img_path = "dashboard_kindle.png"
+
+            if is_k4:
+                img_path = "/opt/kindleCalendar/dashboard_k4.png"
+                if not os.path.exists(img_path):
+                    img_path = "dashboard_k4.png"
+            else:
+                img_path = "/opt/kindleCalendar/dashboard_kindle.png"
+                if not os.path.exists(img_path):
+                    img_path = "dashboard_kindle.png"
+
             if os.path.exists(img_path):
                 with open(img_path, "rb") as f:
                     data = f.read()

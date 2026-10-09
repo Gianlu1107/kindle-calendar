@@ -1,0 +1,55 @@
+{
+  "class_name": "Scuola Secondaria",
+  "times": [
+    {"ora": 1, "inizio": "08:15", "fine": "09:15"},
+    {"ora": 2, "inizio": "09:15", "fine": "10:05"},
+    {"ora": 3, "inizio": "10:05", "fine": "11:00"},
+    {"ora": 4, "inizio": "11:15", "fine": "12:15"},
+    {"ora": 5, "inizio": "12:15", "fine": "13:15"}
+  ],
+  "schedule": {
+    "lunedi": [
+      {"ora": 1, "inizio": "08:15", "fine": "09:15", "materia": "Inglese"},
+      {"ora": 2, "inizio": "09:15", "fine": "10:05", "materia": "Motoria"},
+      {"ora": 3, "inizio": "10:05", "fine": "11:00", "materia": "Grammatica"},
+      {"ora": 4, "inizio": "11:15", "fine": "12:15", "materia": "Scienze"},
+      {"ora": 5, "inizio": "12:15", "fine": "13:15", "materia": "Antologia"}
+    ],
+    "martedi": [
+      {"ora": 1, "inizio": "08:15", "fine": "09:15", "materia": "Spagnolo"},
+      {"ora": 2, "inizio": "09:15", "fine": "10:05", "materia": "Storia"},
+      {"ora": 3, "inizio": "10:05", "fine": "11:00", "materia": "Geografia"},
+      {"ora": 4, "inizio": "11:15", "fine": "12:15", "materia": "Aritmetica"},
+      {"ora": 5, "inizio": "12:15", "fine": "13:15", "materia": "Aritmetica"}
+    ],
+    "mercoledi": [
+      {"ora": 1, "inizio": "08:15", "fine": "09:15", "materia": "Grammatica"},
+      {"ora": 2, "inizio": "09:15", "fine": "10:05", "materia": "Antologia"},
+      {"ora": 3, "inizio": "10:05", "fine": "11:00", "materia": "Matematica"},
+      {"ora": 4, "inizio": "11:15", "fine": "12:15", "materia": "Geometria"},
+      {"ora": 5, "inizio": "12:15", "fine": "13:15", "materia": "Musica"}
+    ],
+    "giovedi": [
+      {"ora": 1, "inizio": "08:15", "fine": "09:15", "materia": "Tecnologia"},
+      {"ora": 2, "inizio": "09:15", "fine": "10:05", "materia": "Musica"},
+      {"ora": 3, "inizio": "10:05", "fine": "11:00", "materia": "Arte"},
+      {"ora": 4, "inizio": "11:15", "fine": "12:15", "materia": "Arte"},
+      {"ora": 5, "inizio": "12:15", "fine": "13:15", "materia": "Lettura e Scrittura"}
+    ],
+    "venerdi": [
+      {"ora": 1, "inizio": "08:15", "fine": "09:15", "materia": "Letteratura"},
+      {"ora": 2, "inizio": "09:15", "fine": "10:05", "materia": "Motoria"},
+      {"ora": 3, "inizio": "10:05", "fine": "11:00", "materia": "Storia"},
+      {"ora": 4, "inizio": "11:15", "fine": "12:15", "materia": "Inglese"},
+      {"ora": 5, "inizio": "12:15", "fine": "13:15", "materia": "Geometria"}
+    ],
+    "sabato": [
+      {"ora": 1, "inizio": "08:15", "fine": "09:15", "materia": "Religione"},
+      {"ora": 2, "inizio": "09:15", "fine": "10:05", "materia": "Scienze"},
+      {"ora": 3, "inizio": "10:05", "fine": "11:00", "materia": "Inglese"},
+      {"ora": 4, "inizio": "11:15", "fine": "12:15", "materia": "Spagnolo"},
+      {"ora": 5, "inizio": "12:15", "fine": "13:15", "materia": "Tecnologia"}
+    ],
+    "domenica": []
+  }
+}
