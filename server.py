@@ -379,7 +379,8 @@ _CALDAV_CLIENT = None
 _CALDAV_CALENDARS = []
 _CALDAV_CALENDARS_TS = None
 _CALDAV_CACHE = {"timestamp": None, "date_str": None, "data": []}
-_CALDAV_CACHE_BY_DATE = {}
+_RAW_CALDAV_CACHE_BY_DATE = {}
+_MERGED_CACHE_BY_DATE = {}
 _CALDAV_CACHE_FILE = "/tmp/caldav_events_cache.json"
 
 def get_caldav_client_and_calendars(username, password):
@@ -409,12 +410,12 @@ def get_caldav_client_and_calendars(username, password):
         return _CALDAV_CLIENT, _CALDAV_CALENDARS
 
 def fetch_caldav_events_direct(caldav_user, caldav_pwd, target_date):
-    global _CALDAV_CACHE, _CALDAV_CACHE_BY_DATE
+    global _CALDAV_CACHE, _RAW_CALDAV_CACHE_BY_DATE
     now = datetime.now()
     date_str = target_date.strftime("%Y-%m-%d")
     _, calendars = get_caldav_client_and_calendars(caldav_user, caldav_pwd)
     if not calendars:
-        return _CALDAV_CACHE_BY_DATE.get(date_str, {}).get("data", _CALDAV_CACHE["data"] if _CALDAV_CACHE["data"] else [])
+        return _RAW_CALDAV_CACHE_BY_DATE.get(date_str, {}).get("data", _CALDAV_CACHE["data"] if _CALDAV_CACHE["data"] else [])
 
     window_days = 4
     # Query CalDAV estesa a 14 giorni prima per intercettare conferenze ed eventi multi-giorno iniziati prima
@@ -517,7 +518,7 @@ def fetch_caldav_events_direct(caldav_user, caldav_pwd, target_date):
 
     for d_k, ev_list in events_by_date.items():
         ev_list.sort(key=sort_key)
-        _CALDAV_CACHE_BY_DATE[d_k] = {"timestamp": now, "data": ev_list}
+        _RAW_CALDAV_CACHE_BY_DATE[d_k] = {"timestamp": now, "data": ev_list}
 
     target_events = events_by_date.get(date_str, [])
     _CALDAV_CACHE["timestamp"] = now
@@ -530,8 +531,122 @@ def fetch_caldav_events_direct(caldav_user, caldav_pwd, target_date):
         pass
     return target_events
 
+def clean_f1_summary(summ):
+    if not summ:
+        return ""
+    if "FORMULA 1" in summ.upper() and " - " in summ:
+        parts = summ.split(" - ")
+        session = parts[-1].strip()
+        gp_match = re.search(r"([A-Za-z\s]+)\s+GRAND PRIX", parts[0], re.IGNORECASE)
+        gp_name = ""
+        if gp_match:
+            words = [w for w in gp_match.group(1).split() if w.upper() not in ["FORMULA", "1", "HEINEKEN", "AIRWAYS", "CRUISES", "GULF", "AIR", "AIRLINES", "MSC", "AIRLINE", "PETRONAS", "QATAR"]]
+            if words:
+                gp_name = " ".join(dict.fromkeys(words)).title()
+        if gp_name:
+            return f"F1 {gp_name} • {session}"
+        return f"F1 • {session}"
+    return summ
+
+def extract_ical_dt(line):
+    parts = line.split(":", 1)
+    if len(parts) == 2:
+        return parts[1].strip()
+    parts = line.split(";", 1)
+    if len(parts) == 2:
+        return parts[1].strip()
+    return line.strip()
+
+def parse_ics_events(content, target_date):
+    if not content:
+        return []
+    target_str = target_date.strftime("%Y%m%d")
+    events = []
+    seen = set()
+    cur = {}
+    for line in content.splitlines():
+        line = line.strip()
+        if line.startswith("BEGIN:VEVENT"):
+            cur = {}
+        elif line.startswith("SUMMARY:"):
+            cur["summary"] = line[8:].strip()
+        elif line.startswith("DTSTART"):
+            cur["start_raw"] = extract_ical_dt(line)
+        elif line.startswith("DTEND"):
+            cur["end_raw"] = extract_ical_dt(line)
+        elif line.startswith("LOCATION:"):
+            cur["location"] = line[9:].strip()
+        elif line.startswith("DESCRIPTION:"):
+            cur["desc"] = line[12:].strip()
+        elif line.startswith("END:VEVENT"):
+            start = cur.get("start_raw", "")
+            end = cur.get("end_raw", "")
+            raw_summ = strip_emojis(cur.get("summary", ""))
+            summ = clean_f1_summary(raw_summ)
+            loc = strip_emojis(cur.get("location", ""))
+            desc = strip_emojis(cur.get("desc", ""))
+
+            if start:
+                is_allday = "T" not in start
+                s_d_str = start[:8]
+                e_d_str = end[:8] if end else s_d_str
+
+                if is_allday:
+                    if e_d_str > s_d_str:
+                        matches = (s_d_str <= target_str < e_d_str)
+                    else:
+                        matches = (s_d_str == target_str)
+                    if matches:
+                        dedup_key = (raw_summ.lower(), "Tutto il giorno")
+                        if dedup_key not in seen:
+                            seen.add(dedup_key)
+                            events.append({
+                                "summary": summ,
+                                "raw_summary": raw_summ,
+                                "location": loc,
+                                "desc": desc,
+                                "is_allday": True,
+                                "start_min": 0,
+                                "end_min": 24 * 60,
+                                "ora": "Tutto il giorno",
+                                "ora_fine": ""
+                            })
+                else:
+                    if s_d_str <= target_str <= e_d_str:
+                        if s_d_str == target_str and len(start) >= 13:
+                            sh, sm = int(start[9:11]), int(start[11:13])
+                            start_min = sh * 60 + sm
+                            ora_fmt = f"{sh:02d}:{sm:02d}"
+                        else:
+                            start_min = 0
+                            ora_fmt = "00:00"
+
+                        if e_d_str == target_str and len(end) >= 13:
+                            eh, em = int(end[9:11]), int(end[11:13])
+                            end_min = eh * 60 + em
+                            ora_fine_fmt = f"{eh:02d}:{em:02d}"
+                        else:
+                            end_min = 24 * 60
+                            ora_fine_fmt = "24:00"
+
+                        dedup_key = (raw_summ.lower(), ora_fmt)
+                        if dedup_key not in seen:
+                            seen.add(dedup_key)
+                            events.append({
+                                "summary": summ,
+                                "raw_summary": raw_summ,
+                                "location": loc,
+                                "desc": desc,
+                                "is_allday": False,
+                                "start_min": start_min,
+                                "end_min": end_min,
+                                "ora": ora_fmt,
+                                "ora_fine": ora_fine_fmt
+                            })
+    return events
+
 def get_icloud_events(env, target_date=None, force_refresh=False, mock_events=False):
-    global _CALDAV_CACHE, _CALDAV_CACHE_BY_DATE
+    global _CALDAV_CACHE, _RAW_CALDAV_CACHE_BY_DATE, _MERGED_CACHE_BY_DATE
     now = datetime.now()
     if target_date is None:
         target_date = now.date()
@@ -557,53 +672,49 @@ def get_icloud_events(env, target_date=None, force_refresh=False, mock_events=Fa
         }
         return mock_data.get(date_str, [])
 
-    # Carica da cache disco se la memoria è vuota
-    if not _CALDAV_CACHE["timestamp"] and os.path.exists(_CALDAV_CACHE_FILE):
-        try:
-            with open(_CALDAV_CACHE_FILE, "r", encoding="utf-8") as f:
-                saved = json.load(f)
-                _CALDAV_CACHE["timestamp"] = datetime.fromisoformat(saved.get("timestamp"))
-                _CALDAV_CACHE["date_str"] = saved.get("date_str")
-                _CALDAV_CACHE["data"] = saved.get("data", [])
-                if saved.get("date_str"):
-                    _CALDAV_CACHE_BY_DATE[saved["date_str"]] = {"timestamp": _CALDAV_CACHE["timestamp"], "data": _CALDAV_CACHE["data"]}
-        except Exception:
-            pass
+    # Cache di 45 secondi sui risultati unificati
+    if not force_refresh and date_str in _MERGED_CACHE_BY_DATE:
+        entry = _MERGED_CACHE_BY_DATE[date_str]
+        if (now - entry["timestamp"]).total_seconds() < 45:
+            return entry["data"]
 
+    # 1. SINCRONIZZAZIONE DIRETTA CALDAV (REAL-TIME SERVER-TO-APPLE)
+    caldav_events = []
     caldav_user = env.get("ICLOUD_APPLE_ID", "").strip()
     caldav_pwd = env.get("ICLOUD_APP_PASSWORD", "").strip()
-
-    # 1. SINCRONIZZAZIONE DIRETTA CALDAV (REAL-TIME SERVER-TO-APPLE, ZERO MAC)
     if caldav_user and caldav_pwd:
         if force_refresh:
             _CALDAV_CACHE["timestamp"] = None
-            if date_str in _CALDAV_CACHE_BY_DATE:
-                del _CALDAV_CACHE_BY_DATE[date_str]
+            if date_str in _RAW_CALDAV_CACHE_BY_DATE:
+                del _RAW_CALDAV_CACHE_BY_DATE[date_str]
+            if date_str in _MERGED_CACHE_BY_DATE:
+                del _MERGED_CACHE_BY_DATE[date_str]
 
-        # Cache di 45 secondi per la specifica data (risposta istantanea e supporto multi-giorno)
-        if not force_refresh and date_str in _CALDAV_CACHE_BY_DATE:
-            entry = _CALDAV_CACHE_BY_DATE[date_str]
+        # Controlla cache CalDAV raw prima di risollecitare la rete
+        if not force_refresh and date_str in _RAW_CALDAV_CACHE_BY_DATE:
+            entry = _RAW_CALDAV_CACHE_BY_DATE[date_str]
             if (now - entry["timestamp"]).total_seconds() < 45:
-                return entry["data"]
+                caldav_events = entry["data"]
 
-        if _CALDAV_CACHE["timestamp"] and _CALDAV_CACHE["date_str"] == date_str:
-            if (now - _CALDAV_CACHE["timestamp"]).total_seconds() < 45:
-                return _CALDAV_CACHE["data"]
+        if not caldav_events:
+            try:
+                caldav_events = fetch_caldav_events_direct(caldav_user, caldav_pwd, target_date)
+            except Exception as e:
+                print("CalDAV fetch error (fallback to cache):", e)
+                if date_str in _RAW_CALDAV_CACHE_BY_DATE:
+                    caldav_events = _RAW_CALDAV_CACHE_BY_DATE[date_str].get("data", [])
+                elif _CALDAV_CACHE.get("data"):
+                    caldav_events = _CALDAV_CACHE["data"]
 
-        try:
-            return fetch_caldav_events_direct(caldav_user, caldav_pwd, target_date)
-        except Exception as e:
-            print("CalDAV fetch error (fallback to cache):", e)
-            if date_str in _CALDAV_CACHE_BY_DATE:
-                return _CALDAV_CACHE_BY_DATE[date_str]["data"]
-            if _CALDAV_CACHE["data"]:
-                return _CALDAV_CACHE["data"]
-
-    # 2. FALLBACK SU URL FEED ICAL O FILE LOCALE
+    # 2. FEED ICAL LOCALE O URL (PER SOTTOSCRIZIONI COME FORMULA 1 E FEED ESTERNI)
+    ics_events = []
+    local_ics = "/opt/kindleCalendar/calendar_feed.ics"
+    if not os.path.exists(local_ics):
+        local_ics = os.path.join(os.path.dirname(os.path.abspath(__file__)), "calendar_feed.ics")
     url = env.get("ICLOUD_ICAL_URL", "").strip()
     content = ""
-    local_ics = "/opt/kindleCalendar/calendar_feed.ics"
-    if not url and os.path.exists(local_ics):
+
+    if os.path.exists(local_ics):
         try:
             with open(local_ics, "r", encoding="utf-8", errors="ignore") as f:
                 content = f.read()
@@ -626,101 +737,39 @@ def get_icloud_events(env, target_date=None, force_refresh=False, mock_events=Fa
                 content = resp.read().decode("utf-8", errors="ignore")
         except Exception as e:
             print("iCloud sync error:", e)
-            return []
 
-    if not content:
-        return []
+    if content:
+        ics_events = parse_ics_events(content, target_date)
 
+    # 3. MERGE & DEDUPLICAZIONE (CALDAV PREVALE, ICS AGGIUNGE F1 E ALTRI SOTTOSCRITTI)
+    merged = []
+    seen = set()
+
+    for ev in caldav_events:
+        ev["summary"] = clean_f1_summary(ev.get("summary", ""))
+        key = (ev["summary"].strip().lower(), ev.get("ora", ""))
+        if key not in seen:
+            seen.add(key)
+            merged.append(ev)
+
+    for ev in ics_events:
+        key = (ev["summary"].strip().lower(), ev.get("ora", ""))
+        raw_key = (ev.get("raw_summary", ev["summary"]).strip().lower(), ev.get("ora", ""))
+        if key not in seen and raw_key not in seen:
+            seen.add(key)
+            merged.append(ev)
+
+    def sort_key(ev):
+        return (0, 0) if ev.get("is_allday") else (1, ev.get("start_min", 0))
+
+    merged.sort(key=sort_key)
+    _MERGED_CACHE_BY_DATE[date_str] = {"timestamp": now, "data": merged}
     try:
-        events = []
-        seen = set()
-        cur = {}
-        for line in content.splitlines():
-            line = line.strip()
-            if line.startswith("BEGIN:VEVENT"):
-                cur = {}
-            elif line.startswith("SUMMARY:"):
-                cur["summary"] = line[8:].strip()
-            elif line.startswith("DTSTART"):
-                cur["start_raw"] = line.split(":")[-1].strip()
-            elif line.startswith("DTEND"):
-                cur["end_raw"] = line.split(":")[-1].strip()
-            elif line.startswith("LOCATION:"):
-                cur["location"] = line[9:].strip()
-            elif line.startswith("DESCRIPTION:"):
-                cur["desc"] = line[12:].strip()
-            elif line.startswith("END:VEVENT"):
-                target_str = target_date.strftime("%Y%m%d")
-                start = cur.get("start_raw", "")
-                end = cur.get("end_raw", "")
-                summ = strip_emojis(cur.get("summary", ""))
-                cur["summary"] = summ
-                cur["location"] = strip_emojis(cur.get("location", ""))
-                cur["desc"] = strip_emojis(cur.get("desc", ""))
-
-                if start:
-                    is_allday = "T" not in start
-                    s_d_str = start[:8]
-                    e_d_str = end[:8] if end else s_d_str
-
-                    if is_allday:
-                        if e_d_str > s_d_str:
-                            matches = (s_d_str <= target_str < e_d_str)
-                        else:
-                            matches = (s_d_str == target_str)
-                        if matches:
-                            dedup_key = (summ.lower(), "Tutto il giorno")
-                            if dedup_key not in seen:
-                                seen.add(dedup_key)
-                                events.append({
-                                    "summary": summ,
-                                    "location": cur["location"],
-                                    "desc": cur["desc"],
-                                    "is_allday": True,
-                                    "start_min": 0,
-                                    "end_min": 24 * 60,
-                                    "ora": "Tutto il giorno",
-                                    "ora_fine": ""
-                                })
-                    else:
-                        if s_d_str <= target_str <= e_d_str:
-                            if s_d_str == target_str and len(start) >= 13:
-                                sh, sm = int(start[9:11]), int(start[11:13])
-                                start_min = sh * 60 + sm
-                                ora_fmt = f"{sh:02d}:{sm:02d}"
-                            else:
-                                start_min = 0
-                                ora_fmt = "00:00"
-
-                            if e_d_str == target_str and len(end) >= 13:
-                                eh, em = int(end[9:11]), int(end[11:13])
-                                end_min = eh * 60 + em
-                                ora_fine_fmt = f"{eh:02d}:{em:02d}"
-                            else:
-                                end_min = 24 * 60
-                                ora_fine_fmt = "24:00"
-
-                            dedup_key = (summ.lower(), ora_fmt)
-                            if dedup_key not in seen:
-                                seen.add(dedup_key)
-                                events.append({
-                                    "summary": summ,
-                                    "location": cur["location"],
-                                    "desc": cur["desc"],
-                                    "is_allday": False,
-                                    "start_min": start_min,
-                                    "end_min": end_min,
-                                    "ora": ora_fmt,
-                                    "ora_fine": ora_fine_fmt
-                                })
-
-        def sort_key(ev):
-            return (1, 0) if ev.get("is_allday") else (0, ev.get("start_min", 0))
-        events.sort(key=sort_key)
-        return events
-    except Exception as e:
-        print("iCloud sync error:", e)
-        return []
+        with open(_CALDAV_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump({"timestamp": now.isoformat(), "date_str": date_str, "data": merged}, f, ensure_ascii=False)
+    except Exception:
+        pass
+    return merged
 
 _CV_CACHE = {"timestamp": None, "data": []}
 _CV_CACHE_FILE = "/tmp/classeviva_cache.json"

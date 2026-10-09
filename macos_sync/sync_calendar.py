@@ -63,8 +63,12 @@ def generate_feed():
         lines.append("BEGIN:VEVENT")
         lines.append(f"UID:{uid}")
         lines.append(f"DTSTAMP:{now_utc}")
-        lines.append(f"DTSTART;{to_ical_dt(sdate, is_allday)}")
-        lines.append(f"DTEND;{to_ical_dt(edate, is_allday)}")
+        if is_allday:
+            lines.append(f"DTSTART;{to_ical_dt(sdate, is_allday)}")
+            lines.append(f"DTEND;{to_ical_dt(edate, is_allday)}")
+        else:
+            lines.append(f"DTSTART:{to_ical_dt(sdate, is_allday)}")
+            lines.append(f"DTEND:{to_ical_dt(edate, is_allday)}")
         lines.append(f"SUMMARY:{clean_summ}")
         if loc:
             lines.append(f"LOCATION:{loc}")
