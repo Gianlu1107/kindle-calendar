@@ -14,13 +14,14 @@ _CACHE_DATA = {
     "compiti": []
 }
 
-def load_cached_compiti():
+def load_cached_compiti(allow_stale=False):
     global _CACHE_DATA
     if os.path.exists(CACHE_FILE):
         try:
             with open(CACHE_FILE, "r", encoding="utf-8") as f:
                 d = json.load(f)
-                if time.time() - d.get("timestamp", 0) < 1800:
+                age = time.time() - d.get("timestamp", 0)
+                if age < 1800 or allow_stale:
                     _CACHE_DATA = d
                     return d.get("compiti", [])
         except Exception:
@@ -28,33 +29,38 @@ def load_cached_compiti():
     return _CACHE_DATA.get("compiti", [])
 
 def get_bearer_token(cookies_header):
-    req = urllib.request.Request(
-        "https://nuvola.madisoft.it/api-studente/v1/login-from-web",
-        headers={
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
-            "Cookie": cookies_header,
-            "Accept": "application/json"
-        }
-    )
-    with urllib.request.urlopen(req, timeout=8) as r:
-        if r.status == 200:
-            d = json.loads(r.read().decode("utf-8"))
-            return d.get("token")
+    try:
+        req = urllib.request.Request(
+            "https://nuvola.madisoft.it/api-studente/v1/login-from-web",
+            headers={
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+                "Cookie": cookies_header,
+                "Accept": "application/json"
+            }
+        )
+        with urllib.request.urlopen(req, timeout=8) as r:
+            if r.status == 200:
+                ct = r.headers.get("Content-Type", "")
+                if "application/json" in ct:
+                    d = json.loads(r.read().decode("utf-8"))
+                    return d.get("token")
+    except Exception as e:
+        print("Nuvola: Errore rinnovo bearer token:", e)
     return None
 
 def fetch_nuvola_agenda(force_refresh=False):
     global _CACHE_DATA
     now_ts = time.time()
-    if not force_refresh and (now_ts - _CACHE_DATA["timestamp"] < 1800):
-        if _CACHE_DATA["compiti"]:
+    if not force_refresh and (now_ts - _CACHE_DATA.get("timestamp", 0) < 1800):
+        if _CACHE_DATA.get("compiti"):
             return _CACHE_DATA["compiti"]
 
-    cached = load_cached_compiti()
+    cached = load_cached_compiti(allow_stale=False)
     if cached and not force_refresh:
         return cached
 
     if not os.path.exists(SESSION_FILE):
-        return cached or []
+        return load_cached_compiti(allow_stale=True)
 
     try:
         with open(SESSION_FILE, "r", encoding="utf-8") as f:
@@ -65,8 +71,8 @@ def fetch_nuvola_agenda(force_refresh=False):
         
         token = get_bearer_token(cookie_header)
         if not token:
-            print("Nuvola: Impossibile rinnovare Bearer token con la sessione attuale")
-            return cached or []
+            print("Nuvola: Bearer token non disponibile o sessione web scaduta, uso cache locale")
+            return load_cached_compiti(allow_stale=True)
 
         headers = {
             "Authorization": f"Bearer {token}",
@@ -101,17 +107,10 @@ def fetch_nuvola_agenda(force_refresh=False):
                             if any(k in low for k in ["verifica", "interrogazione", "test", "compito in classe"]):
                                 is_test = True
 
-                            if target_d == today:
-                                d_label = "Oggi"
-                            elif target_d == today + timedelta(days=1):
-                                d_label = "Domani"
-                            else:
-                                d_label = target_d.strftime("%d/%m")
-
                             compiti_list.append({
                                 "materia": materia.upper().strip(),
                                 "docente": item.get("docente", "").strip(),
-                                "data": d_label,
+                                "data": target_d.strftime("%d/%m"),
                                 "date_val": target_d.isoformat(),
                                 "descrizione": desc.strip(),
                                 "is_test": is_test
@@ -131,17 +130,10 @@ def fetch_nuvola_agenda(force_refresh=False):
                         if ev_d_str:
                             ev_d = datetime.fromisoformat(ev_d_str).date()
                             if ev_d >= today:
-                                if ev_d == today:
-                                    d_label = "Oggi"
-                                elif ev_d == today + timedelta(days=1):
-                                    d_label = "Domani"
-                                else:
-                                    d_label = ev_d.strftime("%d/%m")
-
                                 compiti_list.append({
                                     "materia": (ev.get("nome") or "AVVISO").upper().strip(),
                                     "docente": ev.get("docente", "").strip(),
-                                    "data": d_label,
+                                    "data": ev_d.strftime("%d/%m"),
                                     "date_val": ev_d.isoformat(),
                                     "descrizione": ev.get("descrizione", "").strip(),
                                     "is_test": True
@@ -152,15 +144,17 @@ def fetch_nuvola_agenda(force_refresh=False):
         # Ordina per data crescente (prima verifiche se stesso giorno)
         compiti_list.sort(key=lambda x: (x["date_val"], not x["is_test"]))
 
-        _CACHE_DATA = {
-            "timestamp": now_ts,
-            "compiti": compiti_list
-        }
-        with open(CACHE_FILE, "w", encoding="utf-8") as f:
-            json.dump(_CACHE_DATA, f, ensure_ascii=False, indent=2)
-
-        return compiti_list
+        if compiti_list:
+            _CACHE_DATA = {
+                "timestamp": now_ts,
+                "compiti": compiti_list
+            }
+            with open(CACHE_FILE, "w", encoding="utf-8") as f:
+                json.dump(_CACHE_DATA, f, ensure_ascii=False, indent=2)
+            return compiti_list
+        else:
+            return load_cached_compiti(allow_stale=True)
 
     except Exception as e:
         print("Errore fetch Nuvola agenda:", e)
-        return cached or []
+        return load_cached_compiti(allow_stale=True)

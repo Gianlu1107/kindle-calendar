@@ -49,9 +49,15 @@ def load_orario_k4():
     return {"schedule": {}}
 
 def build_k4_dashboard_html(query_params, weather_getter=None):
-    ts_param = query_params.get("ts", [""])[0]
-    time_param = query_params.get("time", [""])[0]
-    date_param = query_params.get("date", [""])[0]
+    def get_param(name):
+        val = query_params.get(name, "")
+        if isinstance(val, list):
+            return val[0] if val else ""
+        return str(val) if val else ""
+
+    ts_param = get_param("ts")
+    time_param = get_param("time")
+    date_param = get_param("date")
 
     if ts_param:
         try:
@@ -176,12 +182,58 @@ def build_k4_dashboard_html(query_params, weather_getter=None):
 
     # Helper rendering compiti compatti (senza limiti di righe, stile PW1 per verifiche/compiti)
     def render_tasks_box_html(tasks, title, subtitle, max_items=4):
-        filtered = [t for t in tasks if t.get("data") in ["Domani"] or (t.get("date_val", "") >= today_date.isoformat())]
-        if not filtered:
-            filtered = [t for t in tasks if t.get("date_val", "") >= today_date.isoformat()]
+        hide_today_tasks = (now.hour >= 19)
+
+        visible = []
+        for t in (tasks or []):
+            date_val_str = t.get("date_val", "")
+            t_date = None
+            if date_val_str:
+                try:
+                    t_date = datetime.fromisoformat(date_val_str).date()
+                except Exception:
+                    pass
+
+            if not t_date:
+                raw_d = t.get("data", "")
+                if "/" in raw_d:
+                    try:
+                        parts = raw_d.split("/")
+                        t_date = datetime(today_date.year, int(parts[1]), int(parts[0])).date()
+                    except Exception:
+                        pass
+
+            if not t_date:
+                continue
+
+            # Filtra compiti già passati prima di oggi
+            if t_date < today_date:
+                continue
+
+            # Alle 19:00 o oltre nascondi i compiti della giornata stessa
+            if hide_today_tasks and t_date == today_date:
+                continue
+
+            # Ricalcola etichetta temporale dinamica rispetto alla data del render (today_date)
+            if t_date == today_date:
+                d_label = "Oggi"
+            elif t_date == tomorrow_date:
+                d_label = "Domani"
+            else:
+                d_label = t_date.strftime("%d/%m")
+
+            visible.append({
+                "materia": t.get("materia", "COMPITO"),
+                "data": d_label,
+                "date_val": t_date,
+                "descrizione": t.get("descrizione", ""),
+                "is_test": t.get("is_test", False)
+            })
+
+        visible.sort(key=lambda x: (x["date_val"], not x["is_test"]))
 
         items_html = ""
-        for t in filtered[:max_items]:
+        for t in visible[:max_items]:
             is_test = t.get("is_test", False)
             bg = "#000" if is_test else "#fff"
             text_color = "#fff" if is_test else "#000"
