@@ -11,6 +11,7 @@ concurrency:
 jobs:
   deploy:
     name: Deploy to Proxmox CT 141
+    if: github.repository == 'Gianlu1107/kindle-calendar'
     runs-on: [self-hosted, ct141]
     steps:
       - name: Checkout Code

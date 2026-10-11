@@ -401,6 +401,8 @@ _CALDAV_CACHE_FILE = "/tmp/caldav_events_cache.json"
 
 def get_caldav_client_and_calendars(username, password):
     global _CALDAV_CLIENT, _CALDAV_CALENDARS, _CALDAV_CALENDARS_TS
+    if not username or not password or username == "your_apple_id@icloud.com" or password.startswith("xxxx"):
+        return None, []
     now = datetime.now()
     if _CALDAV_CALENDARS and _CALDAV_CALENDARS_TS and (now - _CALDAV_CALENDARS_TS).total_seconds() < 14400:
         return _CALDAV_CLIENT, _CALDAV_CALENDARS
@@ -794,7 +796,7 @@ def get_classeviva_agenda(env):
     global _CV_CACHE
     user = env.get("CLASSEVIVA_USERNAME", "").strip()
     pwd = env.get("CLASSEVIVA_PASSWORD", "").strip()
-    if not user or user == "tua_username_o_email":
+    if not user or not pwd or user in ["tua_username_o_email", "YOUR_CLASSEVIVA_USERNAME"] or pwd.startswith("YOUR_"):
         return []
 
     now = datetime.now()
@@ -1043,8 +1045,14 @@ def build_dashboard_html(query_params):
 
     override_day = query_params.get("day", [""])[0]
     if override_day:
-        giorno_key = override_day
+        giorno_key = override_day.lower()
         giorno_titolo = override_day.capitalize()
+        inv_map = {v: k for k, v in GIORNI_MAP.items()}
+        if giorno_key in inv_map:
+            target_weekday = inv_map[giorno_key]
+            delta_days = target_weekday - target_date.weekday()
+            target_date = target_date + timedelta(days=delta_days)
+            weekday = target_weekday
 
     target_d_obj = target_date.date() if isinstance(target_date, datetime) else target_date
 
@@ -1875,7 +1883,8 @@ class KindleHandler(BaseHTTPRequestHandler):
 
         client_ip = self.client_address[0]
         device_param = query.get("device", [""])[0].lower()
-        is_k4 = (device_param == "k4") or (client_ip == "192.168.1.29")
+        k4_ips = [ip.strip() for ip in os.environ.get("K4_IP", "192.168.1.29").split(",") if ip.strip()]
+        is_k4 = (device_param == "k4") or (client_ip in k4_ips)
 
         if path in ["/", "/index.html"]:
             if is_k4:

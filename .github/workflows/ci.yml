@@ -28,6 +28,6 @@ jobs:
 
       - name: Syntax and Compile Check
         run: |
-          python3 -m py_compile server.py render_loop.py
+          python3 -m py_compile server.py render_loop.py dashboard_k4.py nuvola_client.py db.py manage_tasks.py login_nuvola.py
           python3 -m unittest discover tests
           echo "Syntax check e unit test completati con successo."

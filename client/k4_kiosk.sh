@@ -13,8 +13,13 @@
 
 export TZ='CET-1CEST,M3.5.0,M10.5.0/3'
 
-SERVER_BASE="http://192.168.1.250:5055/api/image"
-FBINK="/mnt/us/usbnet/bin/fbink"
+# Carica configurazione opzionale dal file system Kindle
+[ -f /mnt/us/kindle_kiosk.env ] && . /mnt/us/kindle_kiosk.env
+[ -f /mnt/us/k4_kiosk.env ] && . /mnt/us/k4_kiosk.env
+
+SERVER_BASE="${SERVER_BASE:-http://192.168.1.250:5055/api/image}"
+NTP_SERVER="${NTP_SERVER:-pool.ntp.org}"
+FBINK="${FBINK:-/mnt/us/usbnet/bin/fbink}"
 TMP_IMG="/tmp/dashboard_k4.png"
 
 # Ferma la UI nativa di Amazon (evita reader, booklet e la scritta "pagina 1 di 1")
@@ -31,7 +36,7 @@ lipc-set-prop -i com.lab126.powerd preventScreenSaver 1 2>/dev/null
 echo "=== KINDLE 4 KIOSK CLIENT ATTIVO ==="
 
 # Sincronizzazione oraria NTP iniziale
-ntpdate -u pool.ntp.org >/dev/null 2>&1 || ntpdate -u 192.168.1.250 >/dev/null 2>&1
+ntpdate -u "$NTP_SERVER" >/dev/null 2>&1 || ntpdate -u pool.ntp.org >/dev/null 2>&1
 
 # Lettura batteria
 BATT=$(gasgauge-info -s 2>/dev/null | tr -d '%')
@@ -58,7 +63,7 @@ while true; do
     CYCLE=$((CYCLE + 1))
     if [ "$CYCLE" -ge 60 ]; then
         CYCLE=0
-        (ntpdate -u pool.ntp.org >/dev/null 2>&1 || ntpdate -u 192.168.1.250 >/dev/null 2>&1) &
+        (ntpdate -u "$NTP_SERVER" >/dev/null 2>&1 || ntpdate -u pool.ntp.org >/dev/null 2>&1) &
     fi
 
     # Rinforza sempre la disattivazione screensaver e blocco tasti fisici

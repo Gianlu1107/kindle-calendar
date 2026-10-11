@@ -28,10 +28,15 @@ async def main():
     print("=" * 65)
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            executable_path='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-            headless=False
-        )
+        chrome_mac = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+        launch_kwargs = {"headless": False}
+        if os.path.exists(chrome_mac):
+            launch_kwargs["executable_path"] = chrome_mac
+        try:
+            browser = await p.chromium.launch(**launch_kwargs)
+        except Exception:
+            browser = await p.chromium.launch(headless=False)
+
         context = await browser.new_context()
         page = await context.new_page()
 
@@ -68,35 +73,40 @@ async def main():
                     compiti = nuvola_client.fetch_nuvola_agenda(force_refresh=True)
                     print(f"[OK] Scaricati {len(compiti)} compiti ed eventi futuri.")
 
-                    # Deploy automatico su LXC 141 (Proxmox)
-                    print("\n[INFO] Sincronizzazione con il server del Kindle (CT 141)...")
-                    try:
-                        subprocess.run(
-                            ["scp", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=no",
-                             SESSION_FILE, "root@192.168.1.250:/tmp/nuvola_session.json"],
-                            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-                        )
-                        if os.path.exists(CACHE_FILE):
+                    # Deploy facoltativo su server remoto Proxmox LXC se configurato
+                    remote_host = os.environ.get("PROXMOX_HOST", os.environ.get("KINDLE_SERVER_HOST", ""))
+                    ct_id = os.environ.get("PROXMOX_CT_ID", os.environ.get("LXC_CONTAINER_ID", ""))
+                    if remote_host and ct_id:
+                        print(f"\n[INFO] Sincronizzazione con il server del Kindle ({remote_host}, CT {ct_id})...")
+                        try:
                             subprocess.run(
                                 ["scp", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=no",
-                                 CACHE_FILE, "root@192.168.1.250:/tmp/nuvola_cache.json"],
+                                 SESSION_FILE, f"{remote_host}:/tmp/nuvola_session.json"],
                                 check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
                             )
+                            if os.path.exists(CACHE_FILE):
+                                subprocess.run(
+                                    ["scp", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=no",
+                                     CACHE_FILE, f"{remote_host}:/tmp/nuvola_cache.json"],
+                                    check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                                )
 
-                        push_cmd = (
-                            "pct push 141 /tmp/nuvola_session.json /opt/kindleCalendar/data/nuvola_session.json && "
-                            "pct push 141 /tmp/nuvola_cache.json /tmp/nuvola_cache.json && "
-                            "pct exec 141 -- chown root:root /opt/kindleCalendar/data/nuvola_session.json && "
-                            "pct exec 141 -- systemctl restart kindle-server"
-                        )
-                        subprocess.run(
-                            ["ssh", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=no",
-                             "root@192.168.1.250", push_cmd],
-                            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-                        )
-                        print("[SUCCESS] Server e cache CT 141 sincronizzati con successo!")
-                    except Exception as e:
-                        print(f"[AVVISO] Sincronizzazione automatica su CT 141 non riuscita: {e}")
+                            push_cmd = (
+                                f"pct push {ct_id} /tmp/nuvola_session.json /opt/kindleCalendar/data/nuvola_session.json && "
+                                f"pct push {ct_id} /tmp/nuvola_cache.json /tmp/nuvola_cache.json && "
+                                f"pct exec {ct_id} -- chown root:root /opt/kindleCalendar/data/nuvola_session.json && "
+                                f"pct exec {ct_id} -- systemctl restart kindle-server"
+                            )
+                            subprocess.run(
+                                ["ssh", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=no",
+                                 remote_host, push_cmd],
+                                check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                            )
+                            print("[SUCCESS] Server e cache sincronizzati con successo!")
+                        except Exception as e:
+                            print(f"[AVVISO] Sincronizzazione automatica su server remoto non riuscita: {e}")
+                    else:
+                        print("\n[INFO] Sessione salvata in locale. (Opzionale: configura PROXMOX_HOST e PROXMOX_CT_ID per sync remoto)")
 
                     break
 

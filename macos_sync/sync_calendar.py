@@ -8,9 +8,9 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 APPLESCRIPT = os.path.join(BASE_DIR, "export_script.applescript")
 ICS_OUTPUT = os.path.join(BASE_DIR, "calendar_feed.ics")
 
-SERVER_HOST = os.environ.get("KINDLE_SERVER_HOST", "root@192.168.1.250")
+SERVER_HOST = os.environ.get("KINDLE_SERVER_HOST", "")
 SERVER_DEST = os.environ.get("KINDLE_SERVER_DEST", "/opt/kindleCalendar/calendar_feed.ics")
-CONTAINER_ID = os.environ.get("LXC_CONTAINER_ID", "141")
+CONTAINER_ID = os.environ.get("LXC_CONTAINER_ID", "")
 
 def to_ical_dt(dt_str, is_allday):
     # Format: YYYY-MM-DDTHH:MM:SS
@@ -87,6 +87,10 @@ def generate_feed():
     return True
 
 def push_to_server():
+    if not SERVER_HOST:
+        print("[INFO] KINDLE_SERVER_HOST non configurato. File calendar_feed.ics salvato localmente.")
+        return
+
     tmp_dest = "/tmp/calendar_feed.ics"
     cmd_scp = ["scp", "-q", "-o", "ConnectTimeout=5", ICS_OUTPUT, f"{SERVER_HOST}:{tmp_dest}"]
     res = subprocess.run(cmd_scp)

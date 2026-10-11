@@ -110,7 +110,7 @@ def get_valid_token():
 
     # 3. Login diretto tramite endpoint nativo mobile API
     username, password = load_env_credentials()
-    if username and password:
+    if username and password and username not in ["YOUR_NUVOLA_USERNAME", "tua_username_o_email"] and not password.startswith("YOUR_"):
         try:
             payload = json.dumps({"username": username, "password": password}).encode("utf-8")
             req = urllib.request.Request(

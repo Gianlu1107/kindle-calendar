@@ -116,14 +116,34 @@ def build_k4_dashboard_html(query_params, weather_getter=None):
         except Exception:
             pass
 
-    batt_str = "100%"
-    try:
-        if os.path.exists("/tmp/kindle_k4_battery.txt"):
+    batt_param = get_param("batt")
+    charging_param = get_param("charging")
+
+    batt_val = "100"
+    if batt_param and batt_param.isdigit():
+        batt_val = batt_param
+    elif os.path.exists("/tmp/kindle_k4_battery.txt"):
+        try:
             with open("/tmp/kindle_k4_battery.txt") as bf:
                 b = bf.read().strip()
-                if b: batt_str = f"{b}%"
-    except Exception:
-        pass
+                if b and b.isdigit():
+                    batt_val = b
+        except Exception:
+            pass
+
+    is_charging = False
+    if charging_param in ["1", "true", "True"]:
+        is_charging = True
+    elif os.path.exists("/tmp/kindle_k4_charging.txt"):
+        try:
+            with open("/tmp/kindle_k4_charging.txt") as cf:
+                cval = cf.read().strip()
+                is_charging = (cval in ["1", "true", "True"])
+        except Exception:
+            pass
+
+    charging_icon = '<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" stroke="none" style="margin-right:2px;display:inline-block;vertical-align:-1px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>' if is_charging else ""
+    batt_str = f"{charging_icon}{batt_val}%"
 
     orario_data = load_orario_k4()
     sched = orario_data.get("schedule", {})

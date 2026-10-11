@@ -1,8 +1,34 @@
 import unittest
+from unittest.mock import patch
 from datetime import date
 from server import build_dashboard_html, get_school_day_info
 
 class TestDashboardScheduleSwitch(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.patch_cv = patch("server.get_classeviva_agenda", return_value=[])
+        cls.patch_icloud = patch("server.get_icloud_events", return_value=[])
+        cls.patch_weather = patch("server.get_weather", return_value={
+            "temp": 18,
+            "desc": "Coperto",
+            "icon": '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>',
+            "forecast": [
+                {"giorno": "Oggi", "desc": "Nebbia", "icon": "", "max": "22", "min": "13"},
+                {"giorno": "Domani", "desc": "Rovesci", "icon": "", "max": "20", "min": "15"},
+                {"giorno": "Mar", "desc": "Coperto", "icon": "", "max": "20", "min": "11"},
+                {"giorno": "Mer", "desc": "Coperto", "icon": "", "max": "22", "min": "12"}
+            ]
+        })
+        cls.patch_cv.start()
+        cls.patch_icloud.start()
+        cls.patch_weather.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.patch_cv.stop()
+        cls.patch_icloud.stop()
+        cls.patch_weather.stop()
+
     def test_school_in_progress(self):
         # Lunedì ore 12:30 -> Lezioni ancora in corso
         html = build_dashboard_html({"day": ["lunedi"], "time": ["12:30"]})

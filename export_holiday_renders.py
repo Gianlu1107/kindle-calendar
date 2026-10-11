@@ -5,7 +5,7 @@ from playwright.async_api import async_playwright
 from server import build_dashboard_html
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ARTIFACT_DIR = "/Users/gianluca/.gemini/antigravity/brain/9cb3f7c6-a4b4-4724-94a2-ffec5353847d"
+ARTIFACT_DIR = os.environ.get("ARTIFACT_DIR")
 
 SCENARIOS = [
     {
@@ -32,7 +32,7 @@ SCENARIOS = [
 
 async def main():
     async with async_playwright() as p:
-        browser = await p.chromium.launch(executable_path="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
+        browser = await p.chromium.launch()
         page = await browser.new_page(viewport={"width": 1024, "height": 758})
 
         for sc in SCENARIOS:
@@ -44,10 +44,11 @@ async def main():
             await page.screenshot(path=out_path)
             print(f"Esportata immagine: {out_path}", flush=True)
             
-            # Copia anche negli artifacts per anteprima diretta
-            art_path = os.path.join(ARTIFACT_DIR, sc["filename"])
-            shutil.copyfile(out_path, art_path)
-            print(f"Copiata in artifact: {art_path}", flush=True)
+            # Copia facoltativa negli artifacts se impostata la variabile
+            if ARTIFACT_DIR and os.path.isdir(ARTIFACT_DIR):
+                art_path = os.path.join(ARTIFACT_DIR, sc["filename"])
+                shutil.copyfile(out_path, art_path)
+                print(f"Copiata in artifact: {art_path}", flush=True)
 
         await browser.close()
 

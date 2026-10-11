@@ -12,8 +12,12 @@
 # Timezone string for Italy / Central Europe
 export TZ='CET-1CEST,M3.5.0,M10.5.0/3'
 
-SERVER_BASE="http://192.168.1.250:5055/api/image"
-FBINK="/mnt/us/usbnet/bin/fbink"
+# Carica configurazione opzionale dal file system Kindle
+[ -f /mnt/us/kindle_kiosk.env ] && . /mnt/us/kindle_kiosk.env
+
+SERVER_BASE="${SERVER_BASE:-http://192.168.1.250:5055/api/image}"
+NTP_SERVER="${NTP_SERVER:-pool.ntp.org}"
+FBINK="${FBINK:-/mnt/us/usbnet/bin/fbink}"
 TMP_IMG="/tmp/dashboard.png"
 
 # Setup Kiosk & Power
@@ -46,7 +50,7 @@ apply_frontlight
 echo "=== KINDLE ATOMIC KIOSK CLIENT ATTIVO ==="
 
 # Initial NTP time synchronization
-ntpdate -u pool.ntp.org >/dev/null 2>&1 || ntpdate -u 192.168.1.250 >/dev/null 2>&1
+ntpdate -u "$NTP_SERVER" >/dev/null 2>&1 || ntpdate -u pool.ntp.org >/dev/null 2>&1
 
 # Initial render
 BATT=$(gasgauge-info -s 2>/dev/null)
@@ -75,7 +79,7 @@ while true; do
     CYCLE=$((CYCLE + 1))
     if [ "$CYCLE" -ge 60 ]; then
         CYCLE=0
-        (ntpdate -u pool.ntp.org >/dev/null 2>&1 || ntpdate -u 192.168.1.250 >/dev/null 2>&1) &
+        (ntpdate -u "$NTP_SERVER" >/dev/null 2>&1 || ntpdate -u pool.ntp.org >/dev/null 2>&1) &
     fi
 
     # Read hardware battery percentage & charging status

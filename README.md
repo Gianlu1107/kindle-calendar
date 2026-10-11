@@ -1,19 +1,16 @@
 # Kindle Calendar Dashboard (E-Ink Smart Kiosk)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-black.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/Platform-Kindle%20Paperwhite-lightgrey.svg)](#)
+[![Platform](https://img.shields.io/badge/Platform-Kindle%20Paperwhite%20%7C%20Kindle%204-lightgrey.svg)](#)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](#)
+[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg)](#)
 [![Display](https://img.shields.io/badge/Display-E--Ink%20Monochrome-black.svg)](#)
 
-Architettura e suite software per trasformare un **Amazon Kindle Paperwhite (PW1 / PW2 / PW3 / PW4)** con jailbreak in uno smart display da scrivania a basso consumo energetico e ad alto contrasto.
+Architettura e suite software production-ready open source per trasformare dispositivi **Amazon Kindle con jailbreak** in smart display da scrivania a bassissimo consumo energetico, alto contrasto e aggiornamento atomico al minuto (:00.0).
 
-Il sistema aggrega e visualizza in tempo reale:
-- **Linea temporale giornaliera (07:00 - 23:00):** layout proporzionale con orologio atomico e indicatore di avanzamento sincronizzati al minuto esatto.
-- **Integrazione Apple Calendar e iCloud:** sincronizzazione bidirezionale, deduplicazione intelligente degli eventi, gestione eventi per l'intera giornata e impegni a orario.
-- **Registro Elettronico Scolastico (ClasseViva Spaggiari):** estrazione automatica di compiti e verifiche con analisi semantica via **Groq LLM** per la classificazione puntuale tra prove di verifica e compiti ordinari.
-- **Previsioni Meteorologiche Locali:** integrazione con Open-Meteo API per previsioni a 3 giorni con icone vettoriali SVG monocromatiche native.
-- **Monitoraggio Batteria e Stato Alimentazione:** lettura diretta dai registri hardware del controller di carica del dispositivo.
-- **Gestione Hardware della Luminosita (PWM Shutdown):** spegnimento fisico dei LED frontlight (0%) tra le **22:00** e le **06:30**, con riaccensione al 50% alle **06:30**.
+Supporta nativamente una configurazione **multi-device parallela**:
+1. **Kindle Paperwhite (PW1 / PW2 / PW3 / PW4)** — Display 1024x758, sincronizzazione Apple iCloud CalDAV, agenda scolastica **ClasseViva**, previsioni meteo e controllo hardware frontlight.
+2. **Kindle 4 (K4 Non-Touch)** — Display 800x600, sincronizzazione **Nuvola Registro Elettronico (Madisoft)** tramite API mobile native, blocco hardware dei tasti fisici e layout dinamico a 4 fasi giornaliere.
 
 ---
 
@@ -27,25 +24,36 @@ Il sistema aggrega e visualizza in tempo reale:
 
 ```mermaid
 flowchart TD
-    subgraph Cloud ["Servizi Cloud"]
+    subgraph Cloud ["Servizi Cloud & Registri"]
         IC["Apple iCloud CalDAV"] -->|Sync Diretto Real-Time| D
-        CV["ClasseViva API"] -->|Cache 1h| D
-        GQ["Groq LLM API"] -->|Classificazione| D
-        OM["Open-Meteo API"] --> D
+        CV["ClasseViva API (Spaggiari)"] -->|Cache 1h + LLM| D
+        NV["Nuvola API (Madisoft)"] -->|JWT Mobile Auth| D
+        GQ["Groq LLM API"] -->|Classificazione Verifiche| D
+        OM["Open-Meteo API"] -->|Previsioni 3gg| D
     end
 
-    subgraph Server ["Linux Server / LXC Container"]
+    subgraph Storage ["Database & Storage"]
+        PG[("PostgreSQL 15+")] <-->|Config & Task| D
+        JS[("Fallback JSON Storage")] <--> D
+    end
+
+    subgraph Server ["Linux Server / Docker / LXC"]
         D["server.py (HTTP Server :5055)"]
-        D --> E["HTML Dashboard Template"]
-        E -->|Pre-render a :55| F["render_loop.py (Playwright Chromium)"]
-        F -->|ImageMagick 90 deg| G["/api/image (PNG 758x1024)"]
+        D --> E1["Template PW1 (1024x758)"]
+        D --> E2["Template K4 (800x600)"]
+        E1 -->|Pre-render a :55| F["render_loop.py (Playwright Chromium)"]
+        E2 -->|Pre-render a :55| F
+        F -->|ImageMagick 90 deg| G1["/api/image (PW1 758x1024)"]
+        F -->|ImageMagick 90 deg| G2["/api/image?device=k4 (K4 600x800)"]
     end
 
-    subgraph Kindle ["Kindle Paperwhite Kiosk"]
-        H["kindle_kiosk.sh Daemon"] -->|HTTP GET a :00.0| G
-        H -->|gasgauge-info / lipc| D
-        H -->|FBInk Framebuffer| I["E-Ink Display"]
-        H -->|sysfs PWM| J["LED Frontlight (0% / 50%)"]
+    subgraph Clients ["Kindle E-Ink Kiosks"]
+        H1["Paperwhite: kindle_kiosk.sh"] -->|HTTP GET a :00.0| G1
+        H2["Kindle 4: k4_kiosk.sh"] -->|HTTP GET a :00.0| G2
+        H1 -->|FBInk Framebuffer| I1["E-Ink Display (PW1)"]
+        H2 -->|FBInk Framebuffer| I2["E-Ink Display (K4)"]
+        H1 -->|sysfs PWM| J1["LED Frontlight (0% / 50%)"]
+        H2 -->|chmod 000 /dev/input| J2["Blocco Tasti Fisici"]
     end
 ```
 
@@ -97,88 +105,110 @@ flowchart TD
 
 ## Installazione e Configurazione
 
-### 1. Requisiti Server (Linux / LXC / Docker)
-- Python 3.10 o superiore
-- ImageMagick (`convert`)
-- Browser Chromium e relative librerie di sistema
+### Metodo A: Docker Compose (Consigliato per Server / NAS / Raspberry Pi)
+
+Il modo più rapido per avviare l'intero stack (server dashboard + database PostgreSQL):
 
 ```bash
-# Installazione pacchetti di sistema (Debian / Ubuntu)
-sudo apt update && sudo apt install -y python3 python3-venv imagemagick curl git
+git clone https://github.com/Gianlu1107/kindle-calendar.git
+cd kindle-calendar
 
-# Clonazione repository
+# Configura le tue credenziali
+cp .env.example .env
+nano .env
+
+# Avvia lo stack
+docker compose up -d
+```
+
+La dashboard sarà immediatamente disponibile su `http://<IP_SERVER>:5055/`.
+
+---
+
+### Metodo B: Installazione Nativa (Debian / Ubuntu / Proxmox LXC)
+
+Esegui lo script di configurazione automatica per installare dipendenze di sistema, virtualenv Python, browser Playwright e servizi systemd:
+
+```bash
 git clone https://github.com/Gianlu1107/kindle-calendar.git /opt/kindleCalendar
 cd /opt/kindleCalendar
+sudo ./setup.sh
+```
 
-# Creazione ambiente virtuale Python
+Oppure manualmente:
+```bash
+sudo apt update && sudo apt install -y python3 python3-venv imagemagick curl git postgresql postgresql-contrib libpq-dev
+
 python3 -m venv venv
 ./venv/bin/pip install --upgrade pip
 ./venv/bin/pip install -r requirements.txt
 ./venv/bin/playwright install chromium
 ./venv/bin/playwright install-deps chromium
 
-# Configurazione variabili d'ambiente
 cp .env.example .env
 nano .env
-```
 
-Oppure eseguire direttamente lo script di configurazione automatica:
-```bash
-sudo ./setup.sh
-```
-
----
-
-### 2. Configurazione Servizi Systemd
-
-```bash
+# Avvio servizi
 sudo cp systemd/kindle-server.service /etc/systemd/system/
 sudo cp systemd/kindle-renderer.service /etc/systemd/system/
-
 sudo systemctl daemon-reload
-sudo systemctl enable --now kindle-server.service
-sudo systemctl enable --now kindle-renderer.service
-```
-
-Stato di esecuzione:
-```bash
-systemctl status kindle-server.service
-systemctl status kindle-renderer.service
+sudo systemctl enable --now kindle-server.service kindle-renderer.service
 ```
 
 ---
 
-### 3. Setup del Kindle Paperwhite (Client Kiosk)
+### 3. Setup dei Dispositivi Kindle (Client Kiosk)
 
-#### Prerequisiti:
-1. Jailbreak attivo sul Kindle Paperwhite.
-2. KUAL (Kindle Unified Application Launcher) installato.
-3. Estensione USBNetwork installata (con demone SSH abilitato su interfaccia Wi-Fi).
-4. Utility FBInk posizionata in `/mnt/us/usbnet/bin/fbink`.
+#### Prerequisiti per entrambi i dispositivi:
+1. Jailbreak attivo sul Kindle (JB per PW o K4).
+2. KUAL installato (per la gestione pacchetti).
+3. Estensione **USBNetwork** installata con demone SSH attivo su rete Wi-Fi.
+4. Utility **FBInk** presente in `/mnt/us/usbnet/bin/fbink`.
 
-#### Deploy Client Kiosk:
+---
+
+#### A. Setup Kindle Paperwhite (PW1 / PW2 / PW3 / PW4)
+Copia lo script kiosk e la configurazione sul Kindle via SCP:
 ```bash
-scp -i ~/.ssh/kindle_rsa client/kindle_kiosk.sh root@<IP_KINDLE>:/mnt/us/kindle_kiosk.sh
-ssh -i ~/.ssh/kindle_rsa root@<IP_KINDLE> "chmod +x /mnt/us/kindle_kiosk.sh"
+# Copia script e config
+scp client/kindle_kiosk.sh root@<IP_KINDLE>:/mnt/us/kindle_kiosk.sh
+scp client/kindle_kiosk.env.example root@<IP_KINDLE>:/mnt/us/kindle_kiosk.env
+ssh root@<IP_KINDLE> "chmod +x /mnt/us/kindle_kiosk.sh"
+
+# Modifica l'IP del server nel file di configurazione
+ssh root@<IP_KINDLE> "nano /mnt/us/kindle_kiosk.env"
+
+# Registra il demone Upstart per l'avvio automatico al boot
+scp client/kindle_kiosk.conf root@<IP_KINDLE>:/etc/upstart/kindle_kiosk.conf
+ssh root@<IP_KINDLE> "/sbin/restart kindle_kiosk"
 ```
 
-Configurazione Upstart per avvio automatico al boot:
+---
+
+#### B. Setup Kindle 4 (K4 Non-Touch)
+Il Kindle 4 utilizza un framebuffer 600x800 e riceve lo snapshot dedicato con layout adattato per K4:
 ```bash
-scp -i ~/.ssh/kindle_rsa client/kindle_kiosk.conf root@<IP_KINDLE>:/etc/upstart/kindle_kiosk.conf
-ssh -i ~/.ssh/kindle_rsa root@<IP_KINDLE> "/sbin/restart kindle_kiosk"
+# Copia script e config
+scp client/k4_kiosk.sh root@<IP_K4>:/mnt/us/k4_kiosk.sh
+scp client/kindle_kiosk.env.example root@<IP_K4>:/mnt/us/kindle_kiosk.env
+ssh root@<IP_K4> "chmod +x /mnt/us/k4_kiosk.sh"
+
+# Modifica SERVER_BASE con il proprio IP server
+ssh root@<IP_K4> "nano /mnt/us/kindle_kiosk.env"
+
+# Avvio del demone kiosk in background
+ssh root@<IP_K4> "/mnt/us/k4_kiosk.sh >/dev/null 2>&1 &"
 ```
 
 ---
 
 ### 4. Sincronizzazione macOS Calendar (Opzionale)
 
-Per esportare automaticamente gli eventi da Calendar.app verso il server:
-
-1. Configurare le variabili in `macos_sync/sync_calendar.py`.
-2. Registrare il job di background in launchd:
+Se preferisci esportare localmente da Calendar.app su Mac verso il server Linux senza CalDAV diretto:
+1. Configura `macos_sync/sync_calendar.py` (o imposta la variabile d'ambiente `KINDLE_SERVER_HOST`).
+2. Registra il job in launchd:
 ```bash
 cp macos_sync/com.kindle.calendarsync.plist.example ~/Library/LaunchAgents/com.kindle.calendarsync.plist
-nano ~/Library/LaunchAgents/com.kindle.calendarsync.plist
 launchctl load ~/Library/LaunchAgents/com.kindle.calendarsync.plist
 ```
 
@@ -189,23 +219,35 @@ launchctl load ~/Library/LaunchAgents/com.kindle.calendarsync.plist
 | Parametro | Descrizione | Default / Note |
 |---|---|---|
 | `PORT` | Porta di ascolto del web server locale | `5055` |
-| `CITY` | Citta di riferimento per il meteo Open-Meteo | `Padova` |
-| `CLASSEVIVA_USERNAME` | Identificativo utente ClasseViva | Opzionale |
-| `CLASSEVIVA_PASSWORD` | Password account ClasseViva | Opzionale |
-| `GROQ_API_KEY` | Chiave API per classificazione Groq LLM | Opzionale |
-| `ICLOUD_ICAL_URL` | URL feed iCalendar pubblico/privato | Opzionale |
-| `KINDLE_IP` | Indirizzo IP del Kindle nella rete locale | `192.168.1.28` |
+| `DATABASE_URL` | URL connessione database PostgreSQL | `postgresql://...` |
+| `CITY` | Città per il meteo Open-Meteo | `Padova` |
+| `ICLOUD_APPLE_ID` | Apple ID iCloud per CalDAV real-time | Opzionale |
+| `ICLOUD_APP_PASSWORD` | Password per app generata su appleid.apple.com | Opzionale |
+| `CLASSEVIVA_USERNAME` | Username ClasseViva (Spaggiari) | Opzionale |
+| `CLASSEVIVA_PASSWORD` | Password ClasseViva (Spaggiari) | Opzionale |
+| `NUVOLA_USERNAME` | Username Nuvola Registro Elettronico | Opzionale |
+| `NUVOLA_PASSWORD` | Password Nuvola Registro Elettronico | Opzionale |
+| `GROQ_API_KEY` | Chiave API per classificazione semantica verifiche | Opzionale |
+| `K4_IP` | Indirizzo IP del Kindle 4 per routing automatico | Opzionale |
 
 ---
 
-## Diagnostica e Manutenzione
+## Testing e Sviluppo
 
-- **Ispezione snapshot live:**
-  Raggiungere `http://<IP_SERVER>:5055/` da browser per verificare il rendering HTML, oppure scaricare `http://<IP_SERVER>:5055/api/image` per il PNG ottimizzato a 90 gradi.
-- **Sincronizzazione oraria NTP:**
-  Il demone client esegue periodicamente `ntpdate -u pool.ntp.org` per mantenere il drift orario inferiore a 5 millisecondi.
-- **Risoluzione display:**
-  Progettato per la risoluzione 1024x758 landscape (Paperwhite 1/2/3/4).
+Il repository include una suite completa di test unitari con mock per la validazione di tutti i comportamenti e gli scenari temporali:
+
+```bash
+# Esecuzione test unitari
+python3 -m unittest discover tests -v
+```
+
+Per simulare e visualizzare nel browser un determinato scenario o orario:
+- `http://localhost:5055/?day=lunedi&time=07:30` (Preparazione zaino mattina)
+- `http://localhost:5055/?day=lunedi&time=10:15` (Durante le lezioni)
+- `http://localhost:5055/?day=lunedi&time=14:30` (Linea del tempo pomeridiana)
+- `http://localhost:5055/?day=lunedi&time=21:45` (Controllo zaino per domani)
+- `http://localhost:5055/k4?phase=morning_prep` (Vista Kindle 4 mattina)
+- `http://localhost:5055/k4?phase=school_progress` (Vista Kindle 4 scuola live)
 
 ---
 
