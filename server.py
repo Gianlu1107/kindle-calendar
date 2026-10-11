@@ -34,8 +34,24 @@ def strip_emojis(text):
 
 import db
 
-# Carica orario e libri con priorità PostgreSQL e fallback su file JSON
-def load_orario_data():
+# Carica orario e libri con supporto orario temporaneo speciale (fino al 21/10/2026)
+def load_orario_data(target_date=None):
+    if target_date is None:
+        target_date = datetime.now().date()
+    elif isinstance(target_date, datetime):
+        target_date = target_date.date()
+
+    # Orario provvisorio speciale (fino al 21/10/2026 incluso).
+    # Dal 22/10/2026 torna automaticamente all'orario predefinito standard.
+    if target_date <= date(2026, 10, 21):
+        temp_path = os.path.join(DATA_DIR, "orario_3id_temp.json")
+        if os.path.exists(temp_path):
+            try:
+                with open(temp_path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+
     try:
         data = db.get_schedule("3ID")
         if data and data.get("schedule"):
@@ -1030,13 +1046,14 @@ def build_dashboard_html(query_params):
         giorno_key = override_day
         giorno_titolo = override_day.capitalize()
 
+    target_d_obj = target_date.date() if isinstance(target_date, datetime) else target_date
+
     global ORARIO_DATA, LIBRI_DATA
-    ORARIO_DATA = load_orario_data()
+    ORARIO_DATA = load_orario_data(target_date=target_d_obj)
     LIBRI_DATA = load_libri_data()
     load_school_calendar_config()
 
     # Classificazione accurata giorno di scuola vs vacanza ('holiday') vs ponte ('bridge') vs domenica
-    target_d_obj = target_date.date() if isinstance(target_date, datetime) else target_date
     school_info = get_school_day_info(target_d_obj)
 
     lezioni = list(ORARIO_DATA["schedule"].get(giorno_key, []))
